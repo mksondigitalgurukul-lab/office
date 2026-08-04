@@ -25,8 +25,13 @@ hosting. Deployed at
    reachable at `https://www.digitalalipro.in/office`.
 2. **Create a database.** In cPanel → *MySQL Databases*, create a database
    and a database user, and grant that user all privileges on the database.
-3. **Configure `config.php`.** Edit `config.php` at the project root and
-   fill in the real values:
+3. **Create `config.php` from the template.** `config.php` itself is not
+   tracked in git (so a future `git pull` on the server never overwrites
+   your live credentials) — copy the template and edit the copy:
+   ```bash
+   cp config-exmaple.php config.php
+   ```
+   Then fill in the real values in `config.php`:
    ```php
    define('DB_HOST', 'localhost');
    define('DB_NAME', 'your_database_name');
@@ -34,8 +39,8 @@ hosting. Deployed at
    define('DB_PASS', 'your_database_password');
    ```
    Also change `CRON_SECRET` from its placeholder — it's needed if you set
-   up the attendance cron job via an HTTP URL (see step 10 below).
-   Do not commit your real credentials back into git.
+   up the attendance cron job via an HTTP URL (see step 10 below). Never
+   commit `config.php` itself back into git.
 4. **Create the schema.** Visit `https://www.digitalalipro.in/office/sql/index.php`
    in a browser. On a brand-new install (no admin account yet) this page is
    open in **setup mode** — it will automatically create the `admins`,
@@ -108,8 +113,9 @@ hosting. Deployed at
 
 ## Local development
 
-1. Point `config.php` at a local MySQL/MariaDB database (same steps as
-   above, using `127.0.0.1` or `localhost`).
+1. Copy `config-exmaple.php` to `config.php` (`cp config-exmaple.php
+   config.php`) and point it at a local MySQL/MariaDB database, using
+   `127.0.0.1` or `localhost`.
 2. Run PHP's built-in server from the project root:
    ```bash
    php -S localhost:8000
@@ -148,7 +154,8 @@ hosting. Deployed at
                    plus .htaccess and a gitignored key.txt (admin
                    management key, created on first use)
   /cron            mark-absent.php — daily absent-marker, see step 11 above
-  config.php       DB credentials + CRON_SECRET (edit this on the server)
+  config-exmaple.php  Tracked config template — copy to config.php and edit
+  config.php       DB credentials + CRON_SECRET (gitignored — never committed)
   index.php        Redirects to /admin/login.php
   create-admin.php One-time first-admin creation script
   CLAUDE.md        Detailed technical/architecture notes for this project
