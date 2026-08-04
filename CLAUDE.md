@@ -68,10 +68,14 @@ at the bottom for where to pick up next.
     dashboard.php      Welcome banner + "Today's Status"/"Work Mode"/"Work Timing"/"Upcoming"
                        stat cards + quick links (check in/out, leave, WFH, profile) +
                        "Upcoming" table (holidays + this staff member's own approved leave/WFH)
-    attendance.php      Today's check-in/check-out status + buttons; holiday-skip
+    attendance.php      Today's check-in/check-out status + buttons; holiday-skip;
+                        multiple check-ins per day (reason required after the first) —
+                        see "Attendance"
     calendar.php          Week/month/year calendar — holidays, own leave/WFH (pending or
                           approved), and past attendance (worked hours) per day — see
                           "Holidays" below
+    work-report.php       Month view, day-by-day own attendance: every session,
+                          total worked time, and a work-quality label — see "Attendance"
     leave.php            Submit a leave request, see own history + a simple per-type balance
     wfh.php              Submit a WFH request for one date, see own history
     payout.php           Read-only list of this staff member's own payouts (Prompt 6)
@@ -125,6 +129,8 @@ at the bottom for where to pick up next.
                                        Every INSERT is guarded by a NOT EXISTS check on
                                        `holiday_date` (no unique constraint on that column),
                                        so re-running it is always safe.
+    016_attendance_sessions.sql   Schema file — attendance_sessions table (multiple
+                                  check-in/check-out segments per day) — see "Attendance"
     index.php            Schema runner + DB dashboard + Admin Account section (see below)
     .htaccess             Blocks direct HTTP access to *.txt files (key.txt, schema_log.txt)
     key.txt               Admin management key — gitignored, created by the Admin Account section
@@ -224,7 +230,8 @@ database by hand in phpMyAdmin.
 | `holidays` | Company holiday dates. `applies_to` is `all` or `specific` (only `'all'` is functional — see below). Managed at `admin/holidays/index.php` — add one-off holidays, or bulk-generate the next year's Sundays. A `holiday_staff` join table is stubbed (commented out) in `004_holidays.sql` for targeting specific staff once the staff table exists — **not built yet**. |
 | `staff` | Employee records + their own login credentials. `work_mode` is `office`/`wfh`/`hybrid`. `status` is `active`/`inactive` (`inactive` = soft delete — the record is kept, and inactive staff cannot log in). `created_by` references the admin who created the record. |
 | `staff_work_time_history` | Append-only log of every work-timing change for a staff member — see "Work timing history convention" below. `set_by` references the admin who recorded the change. |
-| `attendance` | One row per staff member per day (unique on `staff_id` + `attendance_date`). `work_location` records how the check-in was verified; `status` is always computed by the app, never entered directly by staff — see "Attendance" below. |
+| `attendance` | One row per staff member per day (unique on `staff_id` + `attendance_date`) — a **summary**: first check-in, latest check-out, computed `status`. `work_location` records how the (first) check-in was verified; `status` is always computed by the app, never entered directly by staff — see "Attendance" below. |
+| `attendance_sessions` | Every individual check-in/check-out segment within a day (FK to `attendance.id`, plus denormalized `staff_id`/`attendance_date` for direct querying). Lets a staff member check out and check back in the same day — see "Attendance" below. |
 | `leave_types` | Kinds of leave (`is_paid` flag, `is_active` flag added in `014_...sql`). Seeded with Sick, Casual, Paid (all paid) and Unpaid. Managed via `admin/leave-types/` — deactivated (never hard-deleted) types stay visible in historical data but drop out of the staff-side request dropdown. |
 | `leave_requests` | Staff-submitted leave requests (always `requested_by` = the staff member themself — no admin-initiated leave). `days_count` is a simple inclusive calendar-day count, no accrual rules. `status` starts `pending`; an admin sets `approved`/`rejected` plus `reviewed_by`/`reviewed_at`. |
 | `wfh_requests` | One request per staff member per day (unique on `staff_id` + `wfh_date`). Either staff-submitted (`created_by_type = 'staff'`, starts `pending`) or admin-assigned (`created_by_type = 'admin'`, `status` is `approved` immediately, `reviewed_by` stays `NULL`). See "Leave & WFH requests" below. |
@@ -260,11 +267,15 @@ says now".
 
 ## Attendance
 
-One `attendance` row per staff member per day (`staff/attendance.php` for
-check-in/out, `admin/attendance/*` for the monitor). All logic lives in
+One `attendance` **summary** row per staff member per day (`staff/attendance.php`
+for check-in/out, `admin/attendance/*` for the monitor), backed by zero or
+more `attendance_sessions` rows — one per check-in/check-out segment,
+letting a staff member check out and check back in the same day (see
+"Multiple check-ins per day" below). All logic lives in
 `includes/functions.php`: `getClientIp()`, `isOfficeIp()`,
 `getAttendanceGraceMinutes()`, `getHolidayName()`, `computeCheckInStatus()`,
-`isHalfDay()`.
+`totalWorkedSeconds()`, `formatWorkedSeconds()`, `formatWorkedHours()`,
+`workQualityLabel()`.
 
 - **Holiday skip:** if `getHolidayName($date)` returns non-null,
   `staff/attendance.php` shows "Holiday today" instead of check-in/out
@@ -293,17 +304,56 @@ check-in/out, `admin/attendance/*` for the monitor). All logic lives in
     against `getCurrentWorkTiming()`'s `start` plus
     `getAttendanceGraceMinutes()` (`settings.attendance_grace_minutes`,
     seeded to 15) → `'present'` if within the grace window, else `'late'`.
-  - At check-out: if `isHalfDay()` finds the worked duration
-    (`check_out - check_in`) is under **half** the scheduled shift length
-    (`getCurrentWorkTiming()`'s `end - start`), status is overridden to
-    `'half_day'` regardless of whether it was `'present'` or `'late'` at
-    check-in. Otherwise the check-in status is left as-is.
+  - At check-out: if `totalWorkedSeconds()` (summed across **every**
+    `attendance_sessions` row for the day, not just the segment just
+    closed — see "Multiple check-ins per day" below) is under **half**
+    the scheduled shift length (`getCurrentWorkTiming()`'s `end - start`),
+    status is overridden to `'half_day'` regardless of whether it was
+    `'present'` or `'late'` at check-in. Otherwise the check-in status is
+    left as-is. This re-evaluates on **every** check-out that day, so a
+    second session finishing can push the day's total back over the
+    half-day threshold even if the first session alone wasn't enough.
   - `'absent'` and `'on_leave'` are only ever set by `cron/mark-absent.php`
     or by an admin's manual override — never by the check-in/out flow
     itself. `'on_leave'` requires the `011_attendance_add_on_leave_status.sql`
     migration to have been (manually) run — see the `/sql` listing above.
-- **One row per staff per day** is enforced by the DB unique key on
-  (`staff_id`, `attendance_date`), not just app logic.
+- **One summary row per staff per day** is enforced by the DB unique key
+  on (`staff_id`, `attendance_date`), not just app logic. `check_in_time`
+  always mirrors the day's **first** session's check-in;`check_out_time`
+  mirrors the **latest** session's check-out, or `NULL` while a session is
+  still open (including right after a re-check-in — see below).
+  `work_location` and the check-in half of `status` (present/late) are
+  set once, at the **first** check-in of the day, and never change on a
+  re-check-in.
+- **Multiple check-ins per day** (`staff/attendance.php`): after checking
+  out, a staff member can check back in the same day — e.g. they checked
+  out planning to be done, then changed their mind and resumed work.
+  - The **first** check-in of the day works exactly as before (no reason
+    needed) and both creates/updates the `attendance` summary row and
+    inserts session #1 into `attendance_sessions`.
+  - Every check-in **after** the first closed session requires a
+    **reason** (a required textarea, "Check In Again" instead of "Check
+    In" in the UI) — validated server-side, submitting empty re-shows the
+    form with an error. The reason is stored on that
+    `attendance_sessions` row (`recheckin_reason`) **and** appended to the
+    summary row's `notes` as `"[Re-checked-in at HH:MM:SS] {reason}"` —
+    the same append-only pattern as an admin's manual edit note, so it
+    shows up in the existing admin attendance monitor/history with zero
+    changes needed there.
+  - Each check-out closes whichever session is currently open
+    (`check_out_time IS NULL`); there's always at most one open session
+    per staff per day, enforced by app logic (no unique constraint needed
+    — a second open session can't exist because check-in is blocked while
+    one already is).
+  - `staff/attendance.php` shows a "Today's Sessions" table (all of
+    today's check-in/check-out pairs + any reasons) beneath the
+    check-in/out control, and `staff/work-report.php` (see below) shows
+    the same per-session breakdown for any past day.
+  - This intentionally does **not** re-verify `work_location` or `status`
+    (present/late) on a re-check-in — those stay exactly as computed at
+    the day's first check-in. A re-check-in from an unrecognized IP still
+    shows the "not on office WiFi" warning inline (informational only),
+    but never changes the stored `work_location`.
 - **Manual overrides** (`admin/attendance/edit.php`) use
   `INSERT ... ON DUPLICATE KEY UPDATE` keyed on that same unique
   constraint, so the same form both adds a missing day and edits an
@@ -329,6 +379,25 @@ check-in/out, `admin/attendance/*` for the monitor). All logic lives in
   cron job) it requires `?key=` to match `CRON_SECRET` in `config.php`
   (placeholder in `config-example.php` — change it on the real server's
   `config.php`).
+- **Self-service work report** (`staff/work-report.php`): a month view,
+  day-by-day, of a staff member's own attendance — every
+  `attendance_sessions` segment for that day (check-in/check-out pairs +
+  any re-check-in reason), total worked time (`totalWorkedSeconds()` +
+  `formatWorkedSeconds()`), and a qualitative label from
+  `workQualityLabel(int $workedSeconds, int $scheduledSeconds): ?string`
+  comparing worked time to that day's scheduled shift
+  (`getCurrentWorkTiming()`). Only computed for `present`/`late` days —
+  absent/on-leave/holiday days show no label. Tiers (ratio of worked to
+  scheduled seconds): **< 50%** → `null` here (already covered by the
+  `'half_day'` status badge, not double-labeled); **50–95%** →
+  `'below_target'`; **95–110%** → `'on_target'`; **110–150%** →
+  `'great_work'`; **> 150%** → `'excellent_work'`. These are a judgment
+  call, not tied to payout in any way — purely informational for the
+  staff member's own view, rendered via `badgeVariant()` like every other
+  status. Days from **before** `attendance_sessions` existed have no
+  session rows — the page falls back to treating the summary row's
+  check-in/check-out as a single synthetic session, so historical data
+  displays correctly without a backfill migration.
 
 ## Holidays
 
@@ -633,8 +702,8 @@ only the current page title (no duplicate nav).
   **Overview** (Dashboard), **People** (Staff, Attendance, Leave, WFH),
   **Money** (Payout, Reports), **Admin** (Leave Types, Holidays, Office
   Locations, Settings, DB Tools).
-- **Staff sidebar** is a flat list: Dashboard, Attendance, Calendar,
-  Leave, WFH, Payout, Profile.
+- **Staff sidebar** is a flat list: Dashboard, Attendance, Calendar, Work
+  Report, Leave, WFH, Payout, Profile.
 - The active page's nav link gets the `.nav-link.active` class (solid
   primary-color background) via a string comparison the page sets itself
   (`$activeNav`, see "Shared header/footer includes" below).
@@ -707,8 +776,8 @@ several stale/inconsistent nav links before Prompt 6), every page
 - **`includes/staff-header.php`** / **`includes/staff-footer.php`** —
   same pattern for `/staff/*.php`, simpler since every staff page is at
   the same depth (no `$basePath` needed): set `$pageTitle`, `$activeNav`
-  (`dashboard`, `attendance`, `calendar`, `leave`, `wfh`, `payout`,
-  `profile`), and have `$staff` in scope.
+  (`dashboard`, `attendance`, `calendar`, `work-report`, `leave`, `wfh`,
+  `payout`, `profile`), and have `$staff` in scope.
 - A page's actual link *targets* never changed in this pass — only how
   the nav markup generating them is authored (one shared loop instead of
   ~30 copies of a hand-written `<nav>`), which is what made a full "audit
@@ -1025,6 +1094,50 @@ several stale/inconsistent nav links before Prompt 6), every page
   `"Not worked"`, an ordinary future date shows `"Working day"`, and the
   year view's per-month `<details>` blocks open only for the current
   month by default.
+- **Two bug fixes:**
+  - `staff/leave.php` — the leave-type dropdown validation used
+    `in_array($leaveTypeId, $validTypeIds, true)` (strict comparison)
+    against IDs pulled straight from a DB result via `array_column()`.
+    On a PDO/MySQL driver configuration that returns numeric columns as
+    strings (observed on the live cPanel server; this local dev
+    environment's mysqlnd returns native `int` and didn't reproduce it),
+    the strict comparison always failed — even a validly-selected leave
+    type produced `"Choose a leave type."` and the request silently never
+    submitted. Fixed by casting: `array_map('intval', array_column(...))`.
+    Driver-agnostic; harmless if the driver already returns native ints.
+  - `admin/settings.php` used `str_ends_with()` (PHP 8.0+ only) to detect
+    `..._time` setting keys — a hard fatal `Call to undefined function` on
+    the live server, meaning its actual PHP version is older than the
+    README's stated "PHP 8.0+" requirement. Fixed with the portable
+    `substr($key, -5) === '_time'`. Swapping the cPanel PHP version
+    selector to 8.0+ for this domain (MultiPHP Manager) is still the
+    right long-term fix — PHP < 8.0 is end-of-life and unpatched — but
+    this unblocks the page immediately either way. A full codebase audit
+    turned up no other PHP 8.0+-only functions/syntax in use.
+- **Multiple check-ins per day + self-service work report:** added
+  `attendance_sessions` (`sql/016_attendance_sessions.sql`, auto-runs —
+  has a `CREATE TABLE`) so a staff member can check out, change their
+  mind, and check back in the same day — required to give a reason on
+  every check-in after the first, both stored on the session row and
+  appended to the summary row's `notes`. New `staff/work-report.php`:
+  a month view, day-by-day, of every session, total worked time, and a
+  work-quality label (`workQualityLabel()`). See "Attendance" above for
+  the full write-up of both. Removed `isHalfDay()` (superseded by
+  `totalWorkedSeconds()`, which handles both the single- and
+  multi-session case) since it had no remaining callers.
+- Verified end-to-end: first check-in of the day creates both the
+  `attendance` summary row and session #1; checking out then checking
+  in without a reason is rejected; checking in again **with** a reason
+  creates session #2, resets the summary row's `check_out_time` to
+  `NULL`, and appends the reason to `notes`; a second check-out
+  re-evaluates `half_day` against the **total** worked time across both
+  sessions; the admin attendance monitor and a full payout generation
+  (`present_days`/`half_days`/`unpaid_deduction`/`net_payout`) are
+  completely unaffected, matching hand-calculated figures exactly; the
+  work report correctly falls back to a synthetic single session for
+  attendance rows that predate this feature (no `attendance_sessions`
+  rows), and renders `below_target`/`on_target`/`great_work`/
+  `excellent_work` badges correctly at their respective ratio boundaries.
 
 ## What's planned — V2 ideas
 

@@ -16,7 +16,12 @@ hosting. Deployed at
 
 ## Requirements
 
-- PHP 8.0+ with the `pdo_mysql` extension (standard on cPanel).
+- PHP 8.0+ with the `pdo_mysql` extension (standard on cPanel). If a page
+  throws `Call to undefined function str_ends_with()` (or similar) your
+  domain's PHP version is older than this — check cPanel's **MultiPHP
+  Manager** and bump it. Recommended, since older PHP is end-of-life and
+  unpatched — the codebase itself no longer relies on any 8.0+-only
+  function, so it also runs on 7.x, but that's a fallback, not a target.
 - MySQL / MariaDB database.
 - A cPanel hosting account with the ability to create a MySQL database and
   user (or an equivalent MySQL server for local development).
@@ -213,10 +218,12 @@ hosting. Deployed at
     /payout          Generate/list/view payouts — draft/finalize/paid, printable payslip
     /reports         attendance.php — flexible attendance summary + CSV export
     settings.php     Edit every settings row via one dynamic form
-  /staff            Staff-facing pages: login, logout, dashboard, attendance,
-                    calendar (week/month/year holiday+leave+attendance view),
-                    leave, wfh, payout (read-only own history), profile
-                    (their own session, separate from /admin)
+  /staff            Staff-facing pages: login, logout, dashboard, attendance
+                    (multiple check-ins/day supported), calendar (week/month/
+                    year holiday+leave+attendance view), work-report (own
+                    monthly session-by-session breakdown), leave, wfh, payout
+                    (read-only own history), profile (their own session,
+                    separate from /admin)
   /assets/css      Design system stylesheet — CSS-variable light/dark
                    theming, sidebar shell, cards/forms/badges/tables
   /assets/js       Theme toggle + persistence, mobile sidebar drawer,
@@ -286,6 +293,21 @@ official gazette.
 Staff can browse the full holiday calendar (plus their own leave/WFH and
 past attendance) at **Calendar** in their nav — week, month, or year
 view, with Previous/Today/Next navigation.
+
+## Multiple check-ins & work report
+
+Staff aren't limited to one check-in/check-out per day — after checking
+out, **Attendance** shows a "Check In Again" option (requires a short
+reason, e.g. "plan changed, resuming work") that starts a new session for
+the same day. Every session for today is listed on that page; late-day
+half-day detection is based on the **total** worked time across all of
+them, not just the last one.
+
+**Work Report** in the staff nav shows a month-by-month, day-by-day
+breakdown of every session, total worked time, and a plain-language
+label (Below Target / On Target / Great Work / Excellent Work) comparing
+worked time to that day's scheduled hours — purely informational, it
+never affects payout.
 
 ## Leave types
 

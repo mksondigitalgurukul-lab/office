@@ -113,18 +113,6 @@ function computeCheckInStatus(string $scheduledStart, string $checkInTime, int $
     return $checkInTime <= $deadline ? 'present' : 'late';
 }
 
-/** Whether the worked duration is under half the scheduled shift length. */
-function isHalfDay(string $scheduledStart, string $scheduledEnd, string $checkInTime, string $checkOutTime): bool
-{
-    $scheduledSeconds = strtotime($scheduledEnd) - strtotime($scheduledStart);
-    if ($scheduledSeconds <= 0) {
-        return false;
-    }
-
-    $workedSeconds = strtotime($checkOutTime) - strtotime($checkInTime);
-    return $workedSeconds < ($scheduledSeconds / 2);
-}
-
 /** Formats a check-in/check-out pair as "Xh Ym" worked, or null if either is missing/invalid. */
 function formatWorkedHours(?string $checkInTime, ?string $checkOutTime): ?string
 {
@@ -137,6 +125,51 @@ function formatWorkedHours(?string $checkInTime, ?string $checkOutTime): ?string
     }
     $minutes = (int) round($seconds / 60);
     return intdiv($minutes, 60) . 'h ' . ($minutes % 60) . 'm';
+}
+
+/** Formats a raw second count as "Xh Ym". */
+function formatWorkedSeconds(int $seconds): string
+{
+    $minutes = (int) round(max(0, $seconds) / 60);
+    return intdiv($minutes, 60) . 'h ' . ($minutes % 60) . 'm';
+}
+
+/** Sums the worked duration (in seconds) of every closed session (both times set) in $sessions. */
+function totalWorkedSeconds(array $sessions): int
+{
+    $total = 0;
+    foreach ($sessions as $s) {
+        if ($s['check_in_time'] !== null && $s['check_out_time'] !== null) {
+            $total += max(0, strtotime($s['check_out_time']) - strtotime($s['check_in_time']));
+        }
+    }
+    return $total;
+}
+
+/**
+ * Qualitative label for a day's total worked time against the scheduled shift
+ * length, for the staff self-service work report — not stored anywhere, not
+ * used by payout (see CLAUDE.md's "Attendance" section for the exact tiers).
+ * Returns null if there's nothing meaningful to grade (no scheduled shift,
+ * or no worked time at all).
+ */
+function workQualityLabel(int $workedSeconds, int $scheduledSeconds): ?string
+{
+    if ($scheduledSeconds <= 0 || $workedSeconds <= 0) {
+        return null;
+    }
+    $ratio = $workedSeconds / $scheduledSeconds;
+
+    if ($ratio < 0.5) {
+        return null; // already covered by the 'half_day' status badge
+    } elseif ($ratio < 0.95) {
+        return 'below_target';
+    } elseif ($ratio <= 1.10) {
+        return 'on_target';
+    } elseif ($ratio <= 1.50) {
+        return 'great_work';
+    }
+    return 'excellent_work';
 }
 
 /** Whether a staff member has an approved WFH request for a specific date. */
@@ -325,6 +358,11 @@ function badgeVariant(string $value): string
         'created' => 'success',
         'exists'  => 'info',
         'error'   => 'danger',
+        // workQualityLabel() — staff/work-report.php
+        'below_target'   => 'warning',
+        'on_target'      => 'success',
+        'great_work'     => 'info',
+        'excellent_work' => 'success',
     ];
 
     return $map[$value] ?? 'neutral';

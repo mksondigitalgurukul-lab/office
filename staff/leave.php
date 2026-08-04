@@ -30,7 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $fromValid = DateTime::createFromFormat('Y-m-d', $fromDate);
     $toValid   = DateTime::createFromFormat('Y-m-d', $toDate);
 
-    $validTypeIds = array_column($leaveTypes, 'id');
+    $validTypeIds = array_map('intval', array_column($leaveTypes, 'id'));
 
     if (!in_array($leaveTypeId, $validTypeIds, true)) {
         $error = 'Choose a leave type.';

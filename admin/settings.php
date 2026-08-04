@@ -59,7 +59,7 @@ require __DIR__ . '/../includes/admin-header.php';
           $type  = 'text';
           if ($key === 'attendance_grace_minutes') {
               $type = 'number';
-          } elseif (str_ends_with($key, '_time')) {
+          } elseif (substr($key, -5) === '_time') {
               $type = 'time';
           }
         ?>
