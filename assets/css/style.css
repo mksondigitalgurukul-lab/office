@@ -298,6 +298,14 @@ pre.sql-source {
 
 tr.row-flag { background: #fffbeb; }
 
+/* Printable views (e.g. payslips) — hide chrome, keep just the content */
+@media print {
+  .no-print { display: none !important; }
+  body { background: #fff; }
+  .container { max-width: none; padding: 0; }
+  .card.payslip { border: none; padding: 0; }
+}
+
 @media (max-width: 600px) {
   .topbar { flex-direction: column; align-items: flex-start; }
 }

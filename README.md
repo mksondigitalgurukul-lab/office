@@ -5,11 +5,11 @@ payout) for one company, built as plain PHP + MySQL for cPanel shared
 hosting. Deployed at
 [www.digitalalipro.in/office](https://www.digitalalipro.in/office).
 
-> This is Prompt 4 of a multi-prompt build: project skeleton, database
-> schema runner, admin login, staff management, attendance check-in/out,
-> and now leave requests, WFH requests (staff- and admin-initiated), and
-> office-location management. Payout & reports are not built yet — see
-> `CLAUDE.md` for the full roadmap.
+> **V1 is complete.** All five build prompts have shipped: project
+> skeleton, admin/staff auth, staff management, attendance check-in/out
+> with office-WiFi verification, leave/WFH requests, and now salary
+> management, monthly payout generation, leave-types CRUD, and attendance
+> reports. See `CLAUDE.md` for full technical detail and V2 ideas.
 
 ## Requirements
 
@@ -46,13 +46,14 @@ hosting. Deployed at
    open in **setup mode** — it will automatically create the `admins`,
    `settings`, `office_locations`, `holidays`, `staff`,
    `staff_work_time_history`, `attendance`, `leave_types` (seeded with
-   Sick/Casual/Paid/Unpaid), `leave_requests`, and `wfh_requests` tables
-   and show you their structure.
-   One file needs a **manual step**: `011_attendance_add_on_leave_status.sql`
-   is an `ALTER TABLE` (no `CREATE TABLE`), so it does not auto-run —
-   find it in the list and click its **Re-run** button once. Without this,
-   `cron/mark-absent.php` can't record the `'on_leave'` attendance status
-   (see step 11 below).
+   Sick/Casual/Paid/Unpaid), `leave_requests`, `wfh_requests`,
+   `staff_salary`, and `payouts` tables and show you their structure.
+   **Two files need a manual step**: `011_attendance_add_on_leave_status.sql`
+   and `014_leave_types_add_is_active.sql` are both `ALTER TABLE`s (no
+   `CREATE TABLE`), so neither auto-runs — find each in the list and click
+   its **Re-run** button once. Without the first, `cron/mark-absent.php`
+   can't record the `'on_leave'` attendance status (see step 11 below);
+   without the second, leave-types management (step 12) won't work.
 5. **Create the first admin.** Two options — either works:
    - **Via DB Tools:** on `https://www.digitalalipro.in/office/sql/index.php`
      (still in setup mode), scroll to **Admin Account** and fill in the
@@ -114,6 +115,36 @@ hosting. Deployed at
       — without a matching key, an HTTP request to this script is
       rejected with 403. Running it via CLI/SSH cron never needs the key.
       The script is idempotent, so an accidental double-run is harmless.
+12. **Review leave types (optional).** Sick/Casual/Paid/Unpaid are seeded
+    automatically. Go to **Leave Types** to add more, rename one, toggle
+    whether it's paid, or deactivate one you don't use — deactivating
+    hides it from the staff request form without touching past requests.
+13. **Set staff salaries — required before generating any payout.** On
+    each staff member's profile (**Staff** → pick a staff member), scroll
+    to **Salary** → **Set / Change Salary**, enter their monthly salary
+    and an effective-from date. Like work timing, this is append-only —
+    changing it later adds a new row, it never edits history. A staff
+    member with no salary set is silently skipped when you generate a
+    payout for them (and told so in the result message).
+14. **Generate a monthly payout.** Go to **Payout** → **Generate Payout**,
+    pick a month and either all active staff or one, and submit. This
+    creates/updates **draft** payouts using that month's attendance and
+    approved-leave data — see `CLAUDE.md` → "Payout" for the exact
+    formula. From a draft's detail page you can adjust the **bonus**
+    (recomputes the net payout live), then **Finalize** it — finalized
+    (and later **paid**) payouts are never silently overwritten by a
+    later "Generate"; use that same payout's **Regenerate** button if you
+    need to recalculate one after attendance/leave data changed (it
+    resets to draft and keeps the bonus). **Mark as Paid** on a finalized
+    payout stamps `paid_at`. Each payout's detail page is also a
+    print-friendly payslip — use the **Print / Save as PDF** button (a
+    real PDF export wasn't built; the browser's print-to-PDF covers it).
+15. **Run attendance reports.** Go to **Reports**, pick a staff member
+    (or "All active staff") and a range (last 7 days / this month / this
+    year / a custom from-to), then **Export CSV** if you want the same
+    table as a file. Picking one staff member also shows their
+    day-by-day attendance log for the range, and CSV-exports that log
+    instead of the summary.
 
 ## Local development
 
@@ -125,15 +156,19 @@ hosting. Deployed at
    php -S localhost:8000
    ```
 3. Visit `http://localhost:8000/sql/index.php` to create the schema, then
+   click **Re-run** on `011_attendance_add_on_leave_status.sql` and
+   `014_leave_types_add_is_active.sql` (see step 4 above), then visit
    `http://localhost:8000/create-admin.php` to create your first admin.
 4. Log in at `http://localhost:8000/admin/login.php`, add a staff member
    under **Staff**, then log in as them at
    `http://localhost:8000/staff/login.php`.
 5. To test office-WiFi verification locally, add your machine's IP as an
-   `office_locations` row via DB Tools → Ad-hoc SQL (when using PHP's
+   `office_locations` row via **Office Locations** (when using PHP's
    built-in server from `localhost`, that's usually `127.0.0.1`).
 6. Run `php cron/mark-absent.php` directly from the project root to test
    the absent-marker without waiting for a real cron job.
+7. Set a salary under that staff member's profile, then generate a
+   payout for them under **Payout** to test the calculation.
 
 ## Folder overview
 
@@ -141,12 +176,15 @@ hosting. Deployed at
 /office
   /admin           Admin panel pages (login, logout, dashboard, staff
                     management, attendance monitor, leave/WFH review,
-                    office-location CRUD — and, in a later prompt, payout/reports)
-    /staff          Staff CRUD + work-timing override tool
+                    leave-types CRUD, office-location CRUD, payout, reports)
+    /staff          Staff CRUD + work-timing override tool + salary tool
     /attendance      Today/date monitor, per-staff history, manual override
     /leave           Leave request list/filter + approve/reject
     /wfh             WFH request list/filter + approve/reject + direct assignment
+    /leave-types     leave_types CRUD (add/rename/paid toggle/active toggle)
     /office-locations  Office WiFi IP CRUD (add/edit/active toggle)
+    /payout          Generate/list/view payouts — draft/finalize/paid, printable payslip
+    /reports         attendance.php — flexible attendance summary + CSV export
   /staff            Staff-facing pages: login, logout, dashboard, attendance,
                     leave, wfh (their own session, separate from /admin)
   /assets/css      Shared stylesheet
@@ -154,7 +192,7 @@ hosting. Deployed at
   /includes        db.php (PDO connection), auth.php (admin session
                    helpers), staff_auth.php (staff session helpers),
                    functions.php (escaping + settings + work-timing +
-                   attendance + leave/WFH helpers)
+                   attendance + leave/WFH + payout helpers)
   /sql             Numbered schema files (001_admins.sql, ...) + index.php
                    (the schema runner / DB dashboard / ad-hoc SQL tool /
                    Admin Account section — see CLAUDE.md for how it works),
@@ -165,14 +203,15 @@ hosting. Deployed at
   config.php       DB credentials + CRON_SECRET (gitignored — never committed)
   index.php        Redirects to /admin/login.php
   create-admin.php One-time first-admin creation script
-  CLAUDE.md        Detailed technical/architecture notes for this project
+  CLAUDE.md        Detailed technical/architecture notes for this project — the
+                   source of truth for V2 planning, see its "V2 ideas" section
   README.md        This file
 ```
 
 ## Schema changes going forward
 
 **Do not edit the database by hand in phpMyAdmin.** Add a new numbered
-`.sql` file to `/sql` (e.g. `008_description.sql`), then visit
+`.sql` file to `/sql` (e.g. `015_description.sql`), then visit
 `/sql/index.php` while logged in — it detects and runs new files
 automatically, and lets you re-run or apply ad-hoc `ALTER` statements
 safely. See `CLAUDE.md` for the full convention.
@@ -193,19 +232,24 @@ exists yet:
 ## Leave types
 
 Seeded with Sick, Casual, Paid (all `is_paid = 1`), and Unpaid
-(`is_paid = 0`). No admin page manages `leave_types` — add, rename, or
-retire a type via DB Tools → Ad-hoc SQL, e.g.:
-```sql
-INSERT INTO leave_types (name, is_paid) VALUES ('Maternity', 1);
-```
+(`is_paid = 0`). Managed via **Leave Types** in the admin nav (add,
+inline rename, toggle paid/unpaid, deactivate) — see step 12 above.
+`is_paid` matters beyond labeling: it's what `admin/payout/generate.php`
+uses to decide whether an approved leave request reduces a payout.
 
-## Roadmap
+## Roadmap — V1 complete
 
 - **Prompt 1:** Foundation — skeleton, schema runner, admin login. ✅
 - **Prompt 2:** Staff management, staff login, work-time overrides with
   history. ✅
 - **Prompt 3:** Daily attendance check-in/check-out with office-WiFi
   verification, admin attendance monitor, absent-marking cron. ✅
-- **Prompt 4 (this build):** Leave requests, WFH requests (staff- and
-  admin-initiated), office-location CRUD, WFH wired into attendance. ✅
-- **Prompt 5:** Payout & reports.
+- **Prompt 4:** Leave requests, WFH requests (staff- and admin-initiated),
+  office-location CRUD, WFH wired into attendance. ✅
+- **Prompt 5 (this build):** Salary management, monthly payout generation
+  (draft → finalize → paid, printable payslip), leave-types CRUD,
+  flexible attendance reports with CSV export. ✅
+
+All five V1 prompts are done and verified end-to-end against real
+attendance/leave data. See `CLAUDE.md`'s "What's planned — V2 ideas"
+section for recommended next steps.

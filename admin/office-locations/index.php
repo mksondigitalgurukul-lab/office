@@ -42,9 +42,10 @@ unset($_SESSION['flash']);
   <a href="../attendance/index.php">Attendance</a>
   <a href="../leave/index.php">Leave</a>
   <a href="../wfh/index.php">WFH</a>
+  <a href="../leave-types/index.php">Leave Types</a>
   <a href="index.php"><strong>Office Locations</strong></a>
-  <a href="../payout.php">Payout</a>
-  <a href="../reports.php">Reports</a>
+  <a href="../payout/index.php">Payout</a>
+  <a href="../reports/attendance.php">Reports</a>
   <a href="../settings.php">Settings</a>
   <a href="../../sql/index.php">DB Tools</a>
 </nav>

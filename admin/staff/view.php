@@ -28,6 +28,18 @@ $stmt = $pdo->prepare(
 $stmt->execute([$id]);
 $history = $stmt->fetchAll();
 
+$salary = getCurrentSalary($id);
+
+$stmt = $pdo->prepare(
+    'SELECT s.*, a.name AS set_by_name
+     FROM staff_salary s
+     LEFT JOIN admins a ON a.id = s.set_by
+     WHERE s.staff_id = ?
+     ORDER BY s.effective_from DESC, s.id DESC'
+);
+$stmt->execute([$id]);
+$salaryHistory = $stmt->fetchAll();
+
 $flash = $_SESSION['flash'] ?? null;
 unset($_SESSION['flash']);
 ?>
@@ -53,9 +65,10 @@ unset($_SESSION['flash']);
   <a href="../attendance/index.php">Attendance</a>
   <a href="../leave/index.php">Leave</a>
   <a href="../wfh/index.php">WFH</a>
+  <a href="../leave-types/index.php">Leave Types</a>
   <a href="../office-locations/index.php">Office Locations</a>
-  <a href="../payout.php">Payout</a>
-  <a href="../reports.php">Reports</a>
+  <a href="../payout/index.php">Payout</a>
+  <a href="../reports/attendance.php">Reports</a>
   <a href="../settings.php">Settings</a>
   <a href="../../sql/index.php">DB Tools</a>
 </nav>
@@ -65,6 +78,7 @@ unset($_SESSION['flash']);
     <h1 style="margin:0;"><?= h($staff['full_name']) ?></h1>
     <div class="table-actions">
       <a href="../attendance/staff.php?id=<?= (int) $id ?>" class="btn btn-sm btn-secondary">Attendance History</a>
+      <a href="../payout/index.php?staff_id=<?= (int) $id ?>" class="btn btn-sm btn-secondary">Payouts</a>
       <a href="edit.php?id=<?= (int) $id ?>" class="btn btn-sm btn-secondary">Edit</a>
       <a href="index.php" class="btn btn-sm btn-secondary">Back to list</a>
     </div>
@@ -129,6 +143,44 @@ unset($_SESSION['flash']);
             <?php else: ?>
               <td colspan="2" style="color:var(--color-muted);">(revert to universal default)</td>
             <?php endif; ?>
+            <td><?= h($row['set_by_name'] ?? '—') ?></td>
+            <td><?= h($row['created_at']) ?></td>
+          </tr>
+        <?php endforeach; ?>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="toolbar">
+    <h2 style="margin:0;">Salary</h2>
+    <a href="set-salary.php?id=<?= (int) $id ?>" class="btn btn-sm">Set / Change Salary</a>
+  </div>
+
+  <div class="card" style="margin-bottom:16px;">
+    <p style="margin:0;">
+      <?php if ($salary['amount'] !== null): ?>
+        Current: <strong><?= h(number_format($salary['amount'], 2)) ?></strong> / month
+        (effective from <?= h($salary['effective_from']) ?>)
+      <?php else: ?>
+        <span style="color:var(--color-muted);">No salary set yet — set one before generating a payout for this staff member.</span>
+      <?php endif; ?>
+    </p>
+  </div>
+
+  <h2>Salary History</h2>
+  <div class="overflow-x">
+    <table class="db-table">
+      <thead>
+        <tr><th>Effective From</th><th>Monthly Salary</th><th>Set By</th><th>Recorded At</th></tr>
+      </thead>
+      <tbody>
+        <?php if (!$salaryHistory): ?>
+          <tr><td colspan="4" style="color:var(--color-muted);">No salary recorded yet.</td></tr>
+        <?php endif; ?>
+        <?php foreach ($salaryHistory as $row): ?>
+          <tr>
+            <td><?= h($row['effective_from']) ?></td>
+            <td><?= h(number_format((float) $row['monthly_salary'], 2)) ?></td>
             <td><?= h($row['set_by_name'] ?? '—') ?></td>
             <td><?= h($row['created_at']) ?></td>
           </tr>

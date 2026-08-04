@@ -16,7 +16,7 @@ if (!$staff || $staff['status'] !== 'active') {
     exit;
 }
 
-$leaveTypes = $pdo->query('SELECT * FROM leave_types ORDER BY name')->fetchAll();
+$leaveTypes = $pdo->query('SELECT * FROM leave_types WHERE is_active = 1 ORDER BY name')->fetchAll();
 
 $error   = '';
 $success = '';

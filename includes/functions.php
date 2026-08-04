@@ -144,3 +144,131 @@ function hasApprovedLeave(int $staffId, string $date): bool
     $stmt->execute([$staffId, $date, $date]);
     return (int) $stmt->fetchColumn() > 0;
 }
+
+/**
+ * Resolve the monthly salary that applies to a staff member on a given
+ * date (defaults to today): the latest staff_salary row with
+ * effective_from <= $onDate. Unlike work timing there is no universal
+ * fallback — a staff member with no staff_salary rows yet simply has no
+ * resolvable salary ('amount' => null).
+ */
+function getCurrentSalary(int $staffId, ?string $onDate = null): array
+{
+    $onDate = $onDate ?? date('Y-m-d');
+
+    $stmt = getDB()->prepare(
+        'SELECT monthly_salary, effective_from
+         FROM staff_salary
+         WHERE staff_id = ? AND effective_from <= ?
+         ORDER BY effective_from DESC, id DESC
+         LIMIT 1'
+    );
+    $stmt->execute([$staffId, $onDate]);
+    $row = $stmt->fetch();
+
+    return [
+        'amount'         => $row ? (float) $row['monthly_salary'] : null,
+        'effective_from' => $row['effective_from'] ?? null,
+    ];
+}
+
+/** Number of calendar days in a 'YYYY-MM' month string. */
+function daysInMonth(string $month): int
+{
+    return (int) date('t', strtotime($month . '-01'));
+}
+
+/**
+ * Sum of approved-and-unpaid leave days (leave_type.is_paid = 0) for a
+ * staff member that fall within a 'YYYY-MM' month, counting only the
+ * portion of each leave request that overlaps the month (a request
+ * spanning a month boundary is only counted for the days inside it).
+ * This is the authoritative source for the payout deduction — it does
+ * NOT read attendance.status='on_leave' rows (see CLAUDE.md "Payout").
+ */
+function getUnpaidLeaveDaysInMonth(int $staffId, string $month): float
+{
+    $monthStart = $month . '-01';
+    $monthEnd   = date('Y-m-d', strtotime($monthStart . ' +1 month -1 day'));
+
+    $stmt = getDB()->prepare(
+        "SELECT COALESCE(SUM(
+            DATEDIFF(LEAST(lr.to_date, ?), GREATEST(lr.from_date, ?)) + 1
+         ), 0)
+         FROM leave_requests lr
+         JOIN leave_types lt ON lt.id = lr.leave_type_id
+         WHERE lr.staff_id = ?
+           AND lr.status = 'approved'
+           AND lt.is_paid = 0
+           AND lr.from_date <= ?
+           AND lr.to_date >= ?"
+    );
+    $stmt->execute([$monthEnd, $monthStart, $staffId, $monthEnd, $monthStart]);
+
+    return (float) $stmt->fetchColumn();
+}
+
+/** First/last calendar date of a 'YYYY-MM' month string. */
+function monthBounds(string $month): array
+{
+    $start = $month . '-01';
+    return [$start, date('Y-m-d', strtotime($start . ' +1 month -1 day'))];
+}
+
+/**
+ * Compute the attendance/leave-derived figures a payout needs for one
+ * staff member and one 'YYYY-MM' month: base salary (resolved as of the
+ * month's last day — see CLAUDE.md "Payout" for why), day counts from
+ * `attendance`, and the unpaid_deduction. Returns null if the staff
+ * member has no staff_salary row yet (nothing to base a payout on).
+ * Does NOT include bonus/net_payout — the caller adds bonus and computes
+ * net_payout = base_salary - unpaid_deduction + bonus, since bonus is an
+ * admin decision, not a derived figure.
+ */
+function computePayoutFigures(int $staffId, string $month): ?array
+{
+    [$monthStart, $monthEnd] = monthBounds($month);
+
+    $salary = getCurrentSalary($staffId, $monthEnd);
+    if ($salary['amount'] === null) {
+        return null;
+    }
+
+    $stmt = getDB()->prepare(
+        "SELECT
+            SUM(status IN ('present','late')) AS present_days,
+            SUM(status = 'absent') AS absent_days,
+            SUM(status = 'on_leave') AS on_leave_days,
+            SUM(work_location = 'wfh') AS wfh_days,
+            SUM(status = 'half_day') AS half_days
+         FROM attendance
+         WHERE staff_id = ? AND attendance_date BETWEEN ? AND ?"
+    );
+    $stmt->execute([$staffId, $monthStart, $monthEnd]);
+    $counts = $stmt->fetch();
+
+    $presentDays = (int) ($counts['present_days'] ?? 0);
+    $absentDays  = (int) ($counts['absent_days'] ?? 0);
+    $onLeaveDays = (int) ($counts['on_leave_days'] ?? 0);
+    $wfhDays     = (int) ($counts['wfh_days'] ?? 0);
+    $halfDays    = (int) ($counts['half_days'] ?? 0);
+
+    $unpaidLeaveDays  = getUnpaidLeaveDaysInMonth($staffId, $month);
+    $daysInMonthCount = daysInMonth($month);
+    $perDayRate       = $daysInMonthCount > 0 ? $salary['amount'] / $daysInMonthCount : 0.0;
+    $deductionDays    = $absentDays + $unpaidLeaveDays + ($halfDays * 0.5);
+    $unpaidDeduction  = round($perDayRate * $deductionDays, 2);
+
+    return [
+        'base_salary'       => $salary['amount'],
+        'present_days'      => $presentDays,
+        'absent_days'       => $absentDays,
+        'on_leave_days'     => $onLeaveDays,
+        'wfh_days'          => $wfhDays,
+        'half_days'         => $halfDays,
+        'unpaid_leave_days' => $unpaidLeaveDays,
+        'days_in_month'     => $daysInMonthCount,
+        'per_day_rate'      => $perDayRate,
+        'unpaid_deduction'  => $unpaidDeduction,
+    ];
+}

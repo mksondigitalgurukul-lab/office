@@ -9,11 +9,12 @@ company's own staff (not multi-company / multi-tenant). It runs on plain PHP
 (no framework) + MySQL over PDO, with session-based auth, deployed to cPanel
 shared hosting at `https://www.digitalalipro.in/office`.
 
-This is a **multi-prompt build**. This document reflects **Prompt 4 of 5**:
-the foundation (Prompt 1), staff management (Prompt 2), attendance
-(Prompt 3), and now leave requests, WFH requests (staff- and
-admin-initiated), office-location CRUD, and approved WFH wired into
-attendance's `work_location` logic. Payout & reports are not built yet.
+This is a **multi-prompt build. V1 is now complete (Prompts 1-5/5).**
+Foundation (1), staff management (2), attendance (3), leave/WFH requests
+(4), and now salary management, monthly payout generation, leave-types
+CRUD, and attendance reports (5). **This file is the source of truth for
+any V2 planning** — see "What's built" and the V2 recommendations at the
+bottom for where to pick up next.
 
 ## Folder structure
 
@@ -27,8 +28,10 @@ attendance's `work_location` logic. Payout & reports are not built yet.
       index.php       List staff — filter by status/department/work_mode, search by name/email
       add.php         Add staff form + create (initial password or auto-generate, shown once)
       edit.php        Edit staff fields + status (active/inactive = soft delete)
-      view.php        Staff profile: current work timing + full timing history + link to attendance history
+      view.php        Staff profile: work timing + salary (current + full history of each) +
+                      link to attendance history + link to this staff member's payouts
       set-timing.php  Insert a new staff_work_time_history row (default or custom hours)
+      set-salary.php  Insert a new staff_salary row (append-only, same pattern as timing)
     /attendance        Attendance monitor (login-protected, admin session)
       index.php       Today/date view — filter by department/work_mode, highlights late/unverified rows
       staff.php       Per-staff attendance history (last 60 records)
@@ -38,10 +41,21 @@ attendance's `work_location` logic. Payout & reports are not built yet.
     /wfh                WFH request review + direct assignment (login-protected, admin session)
       index.php       List/filter WFH requests, approve/reject staff-initiated ones, and a
                       form to directly assign+auto-approve a WFH day for any staff member
+    /leave-types        CRUD for leave_types (login-protected, admin session)
+      index.php       List with inline rename, is_paid toggle, active/inactive toggle, add form
     /office-locations   CRUD for office WiFi IPs (login-protected, admin session)
       index.php       List + active/inactive toggle
       add.php         Create a location
       edit.php        Edit name/IP/active flag
+    /payout             Monthly payout generation + review (login-protected, admin session)
+      generate.php    Pick a month (+ optional single staff), calculate draft payouts —
+                      see "Payout" below for the exact calculation
+      index.php       List payouts — filter by month/status/staff, shows column totals
+      view.php        Full breakdown, printable payslip, bonus edit (draft only),
+                      finalize / mark-as-paid / regenerate actions
+    /reports            Reporting (login-protected, admin session)
+      attendance.php  Flexible attendance summary (7 days/month/year/custom, all-staff or
+                      one staff with a day-by-day log) + CSV export — see "Reports" below
   /staff              Staff-facing pages (staff session, separate from admin)
     login.php         Email + password login for staff accounts
     logout.php         Destroys staff session, redirects to login
@@ -58,8 +72,10 @@ attendance's `work_location` logic. Payout & reports are not built yet.
     auth.php            Admin session helpers: requireLogin(), loginAdmin(), logoutAdmin(), currentAdmin()
     staff_auth.php       Staff session helpers: requireStaffLogin(), loginStaff(), logoutStaff(), currentStaff()
     functions.php       h(), getSetting()/setSetting(), getCurrentWorkTiming(), the attendance
-                        helpers (getClientIp(), isOfficeIp(), etc.), and hasApprovedWfh() /
-                        hasApprovedLeave() — see "Leave & WFH requests" below
+                        helpers (getClientIp(), isOfficeIp(), etc.), hasApprovedWfh() /
+                        hasApprovedLeave() (see "Leave & WFH requests" below), and the payout
+                        helpers getCurrentSalary() / computePayoutFigures() / daysInMonth() /
+                        getUnpaidLeaveDaysInMonth() / monthBounds() — see "Payout" below
   /sql
     001_admins.sql       Schema file — admins table
     002_settings.sql     Schema file — settings table + seed rows
@@ -74,6 +90,11 @@ attendance's `work_location` logic. Payout & reports are not built yet.
     011_attendance_add_on_leave_status.sql   ALTER — adds 'on_leave' to attendance.status
                                              (no CREATE TABLE, so it does NOT auto-run —
                                              click "Re-run" for it once on /sql/index.php)
+    012_staff_salary.sql   Schema file — staff_salary table (append-only, same pattern
+                           as staff_work_time_history)
+    013_payouts.sql        Schema file — payouts table
+    014_leave_types_add_is_active.sql   ALTER — adds is_active to leave_types (also does
+                                        NOT auto-run — click "Re-run" for it once, like 011)
     index.php            Schema runner + DB dashboard + Admin Account section (see below)
     .htaccess             Blocks direct HTTP access to *.txt files (key.txt, schema_log.txt)
     key.txt               Admin management key — gitignored, created by the Admin Account section
@@ -174,9 +195,11 @@ database by hand in phpMyAdmin.
 | `staff` | Employee records + their own login credentials. `work_mode` is `office`/`wfh`/`hybrid`. `status` is `active`/`inactive` (`inactive` = soft delete — the record is kept, and inactive staff cannot log in). `created_by` references the admin who created the record. |
 | `staff_work_time_history` | Append-only log of every work-timing change for a staff member — see "Work timing history convention" below. `set_by` references the admin who recorded the change. |
 | `attendance` | One row per staff member per day (unique on `staff_id` + `attendance_date`). `work_location` records how the check-in was verified; `status` is always computed by the app, never entered directly by staff — see "Attendance" below. |
-| `leave_types` | Kinds of leave (`is_paid` flag). Seeded with Sick, Casual, Paid (all paid) and Unpaid. |
+| `leave_types` | Kinds of leave (`is_paid` flag, `is_active` flag added in `014_...sql`). Seeded with Sick, Casual, Paid (all paid) and Unpaid. Managed via `admin/leave-types/` — deactivated (never hard-deleted) types stay visible in historical data but drop out of the staff-side request dropdown. |
 | `leave_requests` | Staff-submitted leave requests (always `requested_by` = the staff member themself — no admin-initiated leave). `days_count` is a simple inclusive calendar-day count, no accrual rules. `status` starts `pending`; an admin sets `approved`/`rejected` plus `reviewed_by`/`reviewed_at`. |
 | `wfh_requests` | One request per staff member per day (unique on `staff_id` + `wfh_date`). Either staff-submitted (`created_by_type = 'staff'`, starts `pending`) or admin-assigned (`created_by_type = 'admin'`, `status` is `approved` immediately, `reviewed_by` stays `NULL`). See "Leave & WFH requests" below. |
+| `staff_salary` | Append-only log of every salary change for a staff member — identical pattern to `staff_work_time_history` (see "Work timing history convention" above), but with **no universal-default fallback**: a staff member with zero rows simply has no resolvable salary. `set_by` references the admin who recorded the change. |
+| `payouts` | One row per staff member per calendar month (unique on `staff_id` + `month`, stored `'YYYY-MM'`). Generated by `admin/payout/generate.php`; see "Payout" below for the full calculation and the `draft` → `finalized` → `paid` workflow. |
 
 ## Work timing history convention (important)
 
@@ -321,6 +344,104 @@ check-in/out, `admin/attendance/*` for the monitor). All logic lives in
   `includes/functions.php` are the single source of truth for "was this
   staff member on approved leave/WFH on this date" — reuse them (used by
   both `staff/attendance.php`'s check-in and `cron/mark-absent.php`).
+- **Leave types** (`admin/leave-types/index.php`) are never hard-deleted —
+  `is_active` (added by `014_leave_types_add_is_active.sql`) soft-deletes
+  a type instead, since existing `leave_requests` may reference it.
+  `staff/leave.php`'s request dropdown only offers `is_active = 1` types;
+  the staff-side leave-balance table still shows all types (including
+  inactive ones) for historical completeness. `is_paid` is toggleable at
+  any time — changing it only affects **future** payout generations, past
+  `payouts` rows already baked their deduction in and are not retroactively
+  changed.
+
+## Payout
+
+Monthly payouts (`payouts`, one row per staff per `'YYYY-MM'` month) are
+generated by `admin/payout/generate.php`, reviewed/adjusted at
+`admin/payout/view.php`, and listed at `admin/payout/index.php`. The
+calculation lives in `includes/functions.php` as
+`computePayoutFigures(int $staffId, string $month): ?array`.
+
+- **Salary** (`staff_salary`) is append-only, resolved via
+  `getCurrentSalary(int $staffId, ?string $onDate = null): array` —
+  identical pattern to `getCurrentWorkTiming()`, but returns
+  `['amount' => null, ...]` (not a universal default) if the staff member
+  has no `staff_salary` row yet. A payout can't be generated for a staff
+  member with no resolvable salary — `generate.php` skips them and says so.
+- **Which date resolves "current" salary for a payout:** the **last day**
+  of the payout's month, not generation day or the month's first day. This
+  is a deliberate simplification consistent with how `getCurrentWorkTiming()`
+  is used elsewhere in this codebase — there is no proration for a salary
+  change effective *mid*-month; whatever's in effect on the month's last
+  day applies to the whole month. Revisit if that's not accurate enough.
+- **Day counts** (`present_days`, `absent_days`, `on_leave_days`,
+  `wfh_days`, `half_days`) come straight from `attendance` rows in the
+  target month:
+  - `present_days` = `status IN ('present', 'late')` — late is folded in;
+    there's no separate `late_days` payout column (lateness affects the
+    `admin/attendance/` monitor and `admin/reports/`, not pay).
+  - `wfh_days` = `work_location = 'wfh'`, counted **in addition to**
+    (not instead of) whatever `present_days`/`half_days` bucket that same
+    row also falls into — it's an informational overlay, not a disjoint
+    category, and never affects the deduction math.
+  - `absent_days` / `on_leave_days` / `half_days` are their respective
+    `status` counts.
+- **`unpaid_deduction` is NOT derived from `on_leave_days`.** Per the
+  brief's explicit instruction, unpaid-leave days come straight from
+  `leave_requests` JOINed to `leave_types.is_paid = 0` via
+  `getUnpaidLeaveDaysInMonth()`, which sums only the portion of each
+  approved+unpaid request that overlaps the target month (a request
+  spanning a month boundary is split correctly). This is deliberately
+  independent of whatever's actually landed in `attendance` — reliable
+  even if `cron/mark-absent.php` hasn't caught up on the last day or two
+  of the month yet. The `on_leave_days` **column** on `payouts` is a
+  separate, purely informational count of `attendance.status = 'on_leave'`
+  rows — it can include *paid* leave too, and isn't part of the deduction.
+- **Formula:**
+  `per_day_rate = base_salary / days_in_month`
+  `deduction_days = absent_days + unpaid_leave_days + (half_days × 0.5)`
+  `unpaid_deduction = round(per_day_rate × deduction_days, 2)`
+  `net_payout = base_salary − unpaid_deduction + bonus`
+  `days_in_month` is the target month's actual calendar length (28-31),
+  via `daysInMonth()`.
+- **`draft` → `finalized` → `paid` workflow:**
+  - `generate.php` always writes `status = 'draft'` — for a brand-new
+    (staff, month) pair, or upserting an *existing* `draft` row (bonus is
+    **carried forward**, not reset to 0, on a re-generate-while-still-draft).
+    If a `payouts` row for that (staff, month) already exists with status
+    `finalized` or `paid`, that staff is **skipped** — `generate.php`
+    never silently overwrites a locked payout, bulk or otherwise.
+  - From `draft`, the bonus is editable (`view.php`, recomputes
+    `net_payout` immediately) and "Finalize" locks it to `finalized`.
+  - From `finalized`, "Mark as Paid" sets `status = 'paid'` and stamps
+    `paid_at`.
+  - **"Regenerate"** (`view.php`, any status) is the explicit override the
+    brief calls for: recomputes every attendance/salary-derived field
+    fresh via `computePayoutFigures()`, **keeps the existing bonus**
+    (an admin decision, not a derived figure), resets `status` back to
+    `'draft'`, and clears `paid_at`. This is the only way to update a
+    `finalized`/`paid` payout — always a single explicit per-payout action,
+    never bulk.
+- **Payslip view** (`admin/payout/view.php`) is styled for printing —
+  `.no-print` (see `assets/css/style.css`'s `@media print` block) hides
+  the nav/topbar/action buttons, leaving just the payslip card. "Print /
+  Save as PDF" calls `window.print()`; there's no server-side PDF
+  generation (no library available/needed — the browser's print-to-PDF
+  covers V1's "printable, PDF export optional" requirement).
+
+## Reports
+
+`admin/reports/attendance.php` is the one report in V1: a flexible
+attendance summary, filterable by staff (all active staff, or one) and
+date range (`range=7days|month|year|custom`, with explicit `from`/`to`
+for `custom`). All-staff mode shows one summary row per staff; picking a
+single staff additionally shows their day-by-day log for the range.
+`&format=csv` exports the **currently-displayed** table — the summary
+for all-staff mode, or the day-by-day log for single-staff mode — via
+`fputcsv()` with `Content-Disposition: attachment`. No caching/precompute;
+every request re-aggregates `attendance` directly with `SUM(condition)`
+(MySQL/MariaDB evaluate a boolean expression as 1/0), so this only stays
+fast at V1's expected data volumes — revisit if `attendance` grows large.
 
 ## Auth approach
 
@@ -369,7 +490,7 @@ check-in/out, `admin/attendance/*` for the monitor). All logic lives in
 - Passwords are hashed with `password_hash()` / verified with
   `password_verify()`. Never store or log plaintext passwords.
 
-## What's built so far (Prompts 1-4/5)
+## What's built — V1 complete (Prompts 1-5/5)
 
 **Prompt 1 — Foundation:**
 - Folder skeleton described above.
@@ -464,16 +585,87 @@ check-in/out, `admin/attendance/*` for the monitor). All logic lives in
   (absent / on_leave / skipped-for-WFH) with correct per-case attendance
   rows (or no row, for the WFH-skip case).
 
-Payout & reports are **not built yet** (Prompt 5).
+**Prompt 5 — Payout & Reports (completes V1):**
+- `staff_salary` (append-only, same pattern as `staff_work_time_history`),
+  `payouts` tables, plus a migration adding `is_active` to `leave_types`
+  (manual Re-run required — see the `/sql` listing, same as Prompt 4's
+  `011_...sql`).
+- Salary management (`admin/staff/set-salary.php`, plus a new "Salary"
+  section on `admin/staff/view.php` showing current + full history) —
+  required before a payout can be generated for that staff member.
+- Payout generation/review (`admin/payout/`): `generate.php` (pick a
+  month + all-or-one staff, computes drafts, skips already-locked or
+  salary-less staff), `index.php` (list/filter/totals), `view.php`
+  (full breakdown, printable payslip, bonus edit, finalize/mark-paid/
+  regenerate) — see "Payout" above for the exact calculation and workflow.
+- Leave-types CRUD (`admin/leave-types/`): list, add, inline rename,
+  is_paid toggle, active/inactive soft-deactivate toggle.
+- Attendance reports (`admin/reports/attendance.php`): 7-day/month/year/
+  custom range, all-staff summary or one staff with a day-by-day log,
+  CSV export — see "Reports" above.
+- Admin nav gained **Leave Types**, **Payout**, and **Reports** links
+  (replacing the old stubs) across every admin page; `admin/staff/view.php`
+  gained a "Payouts" link to that staff member's filtered payout list.
+- Verified end-to-end against a live MariaDB instance: schema auto-create
+  for the two new tables, both manual-Re-run migrations, salary set via
+  the admin UI, a hand-calculated month of attendance + leave data (15
+  present, 3 late, 2 half-day, 4 absent, 1 day paid leave + 2 days unpaid
+  leave, 2 WFH) generating a payout whose `unpaid_deduction` and
+  `net_payout` matched the expected math exactly, bonus adjustment
+  recomputing `net_payout` live, the full draft→finalize→paid workflow,
+  bulk generate correctly skipping an already-finalized/paid staff member
+  without overwriting it, "no salary set" correctly skipped and reported,
+  regenerate on a paid payout (recalculated the days, kept the bonus,
+  reset to draft, cleared `paid_at`), leave-types add/rename/toggle-paid/
+  deactivate (and deactivated types correctly disappearing from the
+  staff-side dropdown while staying visible in the balance table), and
+  the reports module's quick-select ranges, all-staff vs. single-staff
+  modes, and both CSV export shapes.
 
-## What's planned (not yet built)
+## What's planned — V2 ideas
 
-- **Prompt 5:** Payout & reports.
+V1 (Prompts 1-5) is functionally complete end-to-end: staff onboarding,
+attendance with WiFi verification, leave/WFH requests, and monthly payout
+generation all work together against real data. Nothing from the V1 spec
+was skipped. Recommendations for a V2, roughly in order of likely value:
 
-Do not build any of the above ahead of schedule. Note: `leave_requests`
-does not currently target specific staff via the still-unbuilt
-`holiday_staff` stub — that stub is about **holidays**, not leave, and
-remains untouched/unbuilt as documented in "Schema convention" above.
+- **Role-based permissions.** The `admin`/`manager` role has existed in
+  the schema since Prompt 1 but is never checked anywhere — every admin
+  can do everything (approve their own team's leave, see all payouts,
+  edit salaries). A real permission model (e.g. managers scoped to their
+  department, only `admin` role can touch payout/salary) is probably the
+  single highest-value V2 item now that there's enough surface area to
+  need it.
+- **`holiday_staff`** — still just a commented-out stub in
+  `004_holidays.sql`. Holidays are company-wide for everyone today;
+  per-staff/department holiday targeting would need this built out.
+- **Leave accrual.** The current "balance" is just a sum of approved
+  days this calendar year — no annual entitlement, carryover, or accrual
+  rate. A real leave-balance ledger (entitlement per type, carried-over
+  balance, accrual over time) is a natural next step once the business
+  has real policies to encode.
+- **Payout salary proration.** Salary resolution for a payout uses a
+  single reference date (the month's last day) — a raise or salary
+  change effective mid-month is not prorated within that month. Worth
+  revisiting if that precision matters.
+- **office_locations IP matching is exact-string only** — no CIDR/subnet
+  support. Fine for a single static office IP; would need work for offices
+  with dynamic or multiple sub-ranges.
+- **No email/SMS notifications** anywhere (leave approved, payout ready,
+  etc.) — everything is check-the-app. Notifications would meaningfully
+  improve the staff-side experience.
+- **Two migrations require a manual "Re-run" click** after deploy
+  (`011_attendance_add_on_leave_status.sql`,
+  `014_leave_types_add_is_active.sql`) since `sql/index.php`'s auto-run
+  only fires for files with a `CREATE TABLE`. Not a bug, but worth a
+  glance if a V2 wants the schema runner to auto-run ALTER-only files too.
+- **PDF payslip export** was explicitly optional for V1 and wasn't
+  built — the payslip view is print-styled and relies on the browser's
+  "print to PDF," which covers the same need without a PDF library
+  dependency.
+- **Reports module is attendance-only.** A payout/payroll report
+  (totals across a date range, exportable) would pair naturally with the
+  new `payouts` table now that it exists.
 
 ## Conventions
 

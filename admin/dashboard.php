@@ -27,9 +27,10 @@ $admin = currentAdmin();
   <a href="attendance/index.php">Attendance</a>
   <a href="leave/index.php">Leave</a>
   <a href="wfh/index.php">WFH</a>
+  <a href="leave-types/index.php">Leave Types</a>
   <a href="office-locations/index.php">Office Locations</a>
-  <a href="payout.php">Payout</a>
-  <a href="reports.php">Reports</a>
+  <a href="payout/index.php">Payout</a>
+  <a href="reports/attendance.php">Reports</a>
   <a href="settings.php">Settings</a>
   <a href="../sql/index.php">DB Tools</a>
 </nav>
@@ -37,7 +38,7 @@ $admin = currentAdmin();
 <div class="container">
   <div class="welcome-box">
     <h1>Welcome, <?= h($admin['name']) ?></h1>
-    <p>This is the <?= h(APP_NAME) ?> admin dashboard. Payout and reports modules will be added in upcoming builds — use <a href="staff/index.php">Staff</a> to manage employees or <a href="../sql/index.php">DB Tools</a> to inspect the current database schema.</p>
+    <p>This is the <?= h(APP_NAME) ?> admin dashboard — use <a href="staff/index.php">Staff</a> to manage employees, <a href="payout/index.php">Payout</a> to generate monthly payouts, <a href="reports/attendance.php">Reports</a> for attendance summaries, or <a href="../sql/index.php">DB Tools</a> to inspect the current database schema.</p>
   </div>
 </div>
 </body>
