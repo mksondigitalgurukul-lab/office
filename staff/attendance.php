@@ -32,18 +32,28 @@ function loadToday(PDO $pdo, int $staffId, string $today): array
     $stmt->execute([$staffId, $today]);
     $sessions = $stmt->fetchAll();
 
-    $openSession = null;
+    $openSession       = null;
+    $lastClosedSession = null;
+    $lunchTakenToday   = false;
     foreach ($sessions as $s) {
         if ($s['check_in_time'] !== null && $s['check_out_time'] === null) {
             $openSession = $s;
         }
+        if ($s['check_out_time'] !== null) {
+            $lastClosedSession = $s;
+        }
+        if ($s['break_type'] === 'lunch') {
+            $lunchTakenToday = true;
+        }
     }
+    $onLunchBreak = !$openSession && $lastClosedSession !== null && $lastClosedSession['break_type'] === 'lunch';
 
-    return [$todayRow, $sessions, $openSession];
+    return [$todayRow, $sessions, $openSession, $lastClosedSession, $lunchTakenToday, $onLunchBreak];
 }
 
-[$todayRow, $todaySessions, $openSession] = loadToday($pdo, $staff['id'], $today);
+[$todayRow, $todaySessions, $openSession, $lastClosedSession, $lunchTakenToday, $onLunchBreak] = loadToday($pdo, $staff['id'], $today);
 $isFirstSessionToday = count($todaySessions) === 0;
+$lunchWarningMinutes = (int) getSetting('lunch_warning_minutes', '60');
 
 $error   = '';
 $warning = '';
@@ -118,18 +128,58 @@ if (!$blocked && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 $success = 'Checked in again at ' . $now . '.';
             }
         }
-    } elseif ($action === 'check_out') {
+    } elseif ($action === 'lunch_start') {
         if (!$openSession) {
-            $error = $isFirstSessionToday
-                ? "You haven't checked in today."
-                : 'You\'ve already checked out. Use "Check In Again" below if you\'re resuming work today.';
+            $error = "You're not currently checked in.";
+        } elseif ($lunchTakenToday) {
+            $error = "You've already taken your lunch break today.";
         } else {
+            $stmt = $pdo->prepare('UPDATE attendance_sessions SET check_out_time = ?, check_out_ip = ?, break_type = ? WHERE id = ?');
+            $stmt->execute([$now, $ip, 'lunch', $openSession['id']]);
+
+            $stampedNote = '[Lunch started at ' . $now . ']';
+            $newNotes    = trim(($todayRow['notes'] !== null && $todayRow['notes'] !== '' ? $todayRow['notes'] . "\n" : '') . $stampedNote);
+            $stmt = $pdo->prepare('UPDATE attendance SET check_out_time = ?, check_out_ip = ?, notes = ? WHERE id = ?');
+            $stmt->execute([$now, $ip, $newNotes, $todayRow['id']]);
+
+            $success = 'Lunch started at ' . $now . '.';
+        }
+    } elseif ($action === 'lunch_over') {
+        if (!$onLunchBreak) {
+            $error = "You're not currently on a lunch break.";
+        } else {
+            if (!isOfficeIp($ip) && $staff['work_mode'] !== 'wfh' && !hasApprovedWfh($staff['id'], $today)) {
+                $warning = "You don't appear to be on office WiFi for this check-in.";
+            }
+
+            $stmt = $pdo->prepare(
+                'INSERT INTO attendance_sessions (attendance_id, staff_id, attendance_date, check_in_time, check_in_ip)
+                 VALUES (?, ?, ?, ?, ?)'
+            );
+            $stmt->execute([$todayRow['id'], $staff['id'], $today, $now, $ip]);
+
+            $lunchMinutes = (int) round(max(0, strtotime($now) - strtotime($lastClosedSession['check_out_time'])) / 60);
+            $overLimit    = $lunchMinutes > $lunchWarningMinutes;
+
+            $stampedNote = '[Lunch ended at ' . $now . ' — ' . $lunchMinutes . 'm]' . ($overLimit ? ' — over the ' . $lunchWarningMinutes . 'm limit' : '');
+            $newNotes    = trim(($todayRow['notes'] !== null && $todayRow['notes'] !== '' ? $todayRow['notes'] . "\n" : '') . $stampedNote);
+            $stmt = $pdo->prepare('UPDATE attendance SET check_out_time = NULL, notes = ? WHERE id = ?');
+            $stmt->execute([$newNotes, $todayRow['id']]);
+
+            if ($overLimit) {
+                $warning = trim(($warning !== '' ? $warning . ' ' : '') . "Your lunch break was {$lunchMinutes}m, longer than the {$lunchWarningMinutes}m limit.");
+            }
+
+            $success = 'Lunch ended at ' . $now . ' (' . $lunchMinutes . 'm break).';
+        }
+    } elseif ($action === 'check_out') {
+        if ($openSession) {
             $stmt = $pdo->prepare('UPDATE attendance_sessions SET check_out_time = ?, check_out_ip = ? WHERE id = ?');
             $stmt->execute([$now, $ip, $openSession['id']]);
 
             $stmt = $pdo->prepare('SELECT * FROM attendance_sessions WHERE staff_id = ? AND attendance_date = ?');
             $stmt->execute([$staff['id'], $today]);
-            $allSessions = $stmt->fetchAll();
+            $allSessions   = $stmt->fetchAll();
             $workedSeconds = totalWorkedSeconds($allSessions);
 
             $scheduledSeconds = strtotime($timing['end']) - strtotime($timing['start']);
@@ -142,10 +192,35 @@ if (!$blocked && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->execute([$now, $ip, $status, $todayRow['id']]);
 
             $success = 'Checked out at ' . $now . '.';
+        } elseif ($onLunchBreak) {
+            // Ending the day directly from a lunch break — no open session
+            // to close, just finalize status against whatever's been
+            // worked so far and leave a note explaining why.
+            $stmt = $pdo->prepare('SELECT * FROM attendance_sessions WHERE staff_id = ? AND attendance_date = ?');
+            $stmt->execute([$staff['id'], $today]);
+            $allSessions   = $stmt->fetchAll();
+            $workedSeconds = totalWorkedSeconds($allSessions);
+
+            $scheduledSeconds = strtotime($timing['end']) - strtotime($timing['start']);
+            $status = $todayRow['status'];
+            if ($scheduledSeconds > 0 && $workedSeconds < ($scheduledSeconds / 2)) {
+                $status = 'half_day';
+            }
+
+            $stampedNote = '[Ended day directly from lunch break at ' . $now . ']';
+            $newNotes    = trim(($todayRow['notes'] !== null && $todayRow['notes'] !== '' ? $todayRow['notes'] . "\n" : '') . $stampedNote);
+            $stmt = $pdo->prepare('UPDATE attendance SET status = ?, notes = ? WHERE id = ?');
+            $stmt->execute([$status, $newNotes, $todayRow['id']]);
+
+            $success = 'Checked out at ' . $now . ' (ended day from lunch break).';
+        } else {
+            $error = $isFirstSessionToday
+                ? "You haven't checked in today."
+                : 'You\'ve already checked out. Use "Check In Again" below if you\'re resuming work today.';
         }
     }
 
-    [$todayRow, $todaySessions, $openSession] = loadToday($pdo, $staff['id'], $today);
+    [$todayRow, $todaySessions, $openSession, $lastClosedSession, $lunchTakenToday, $onLunchBreak] = loadToday($pdo, $staff['id'], $today);
     $isFirstSessionToday = count($todaySessions) === 0;
 }
 
@@ -163,6 +238,12 @@ $locationLabels = [
     'unverified'       => 'Unverified location',
 ];
 $todayWorkedSeconds = totalWorkedSeconds($todaySessions);
+
+$lunchElapsedMinutes = null;
+if ($onLunchBreak) {
+    $lunchElapsedMinutes = (int) round(max(0, strtotime(date('H:i:s')) - strtotime($lastClosedSession['check_out_time'])) / 60);
+}
+
 $pageTitle = 'Attendance';
 $activeNav = 'attendance';
 require __DIR__ . '/../includes/staff-header.php';
@@ -200,10 +281,36 @@ require __DIR__ . '/../includes/staff-header.php';
 
       <?php if ($openSession): ?>
         <p>Checked in at <strong><?= h($openSession['check_in_time']) ?></strong>.</p>
-        <form method="post">
-          <input type="hidden" name="action" value="check_out">
-          <button type="submit" class="btn">Check Out</button>
-        </form>
+        <div class="table-actions">
+          <form method="post">
+            <input type="hidden" name="action" value="check_out">
+            <button type="submit" class="btn">Check Out</button>
+          </form>
+          <?php if (!$lunchTakenToday): ?>
+            <form method="post">
+              <input type="hidden" name="action" value="lunch_start">
+              <button type="submit" class="btn btn-secondary">Lunch Start</button>
+            </form>
+          <?php endif; ?>
+        </div>
+      <?php elseif ($onLunchBreak): ?>
+        <p>
+          On lunch break since <strong><?= h($lastClosedSession['check_out_time']) ?></strong>
+          — <?= (int) $lunchElapsedMinutes ?>m so far
+          <?php if ($lunchElapsedMinutes > $lunchWarningMinutes): ?>
+            <span class="badge badge-warning">Over the <?= (int) $lunchWarningMinutes ?>m limit</span>
+          <?php endif; ?>
+        </p>
+        <div class="table-actions">
+          <form method="post">
+            <input type="hidden" name="action" value="lunch_over">
+            <button type="submit" class="btn">Lunch Over</button>
+          </form>
+          <form method="post">
+            <input type="hidden" name="action" value="check_out">
+            <button type="submit" class="btn btn-secondary">Check Out (end day)</button>
+          </form>
+        </div>
       <?php elseif ($isFirstSessionToday): ?>
         <p>Not checked in yet.</p>
         <form method="post">
@@ -235,6 +342,18 @@ require __DIR__ . '/../includes/staff-header.php';
                   <td><?= $s['check_out_time'] ? h($s['check_out_time']) : 'In progress' ?></td>
                   <td><?= $s['recheckin_reason'] ? h($s['recheckin_reason']) : '—' ?></td>
                 </tr>
+                <?php if ($s['break_type'] === 'lunch'): ?>
+                  <tr>
+                    <td></td>
+                    <td colspan="3" style="color:var(--color-text-muted); font-style:italic;">
+                      <?php if (isset($todaySessions[$i + 1])): ?>
+                        Lunch break — <?= (int) round(max(0, strtotime($todaySessions[$i + 1]['check_in_time']) - strtotime($s['check_out_time'])) / 60) ?>m
+                      <?php else: ?>
+                        Lunch break — ongoing (<?= (int) $lunchElapsedMinutes ?>m so far)
+                      <?php endif; ?>
+                    </td>
+                  </tr>
+                <?php endif; ?>
               <?php endforeach; ?>
             </tbody>
           </table>

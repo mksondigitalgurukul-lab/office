@@ -55,20 +55,23 @@ hosting. Deployed at
    Sick/Casual/Paid/Unpaid), `leave_requests`, `wfh_requests`,
    `staff_salary`, `payouts`, and `attendance_sessions` tables and show
    you their structure.
-   **Six files need a manual step**: `011_attendance_add_on_leave_status.sql`,
+   **Seven files need a manual step**: `011_attendance_add_on_leave_status.sql`,
    `014_leave_types_add_is_active.sql`, `017_staff_salary_add_reason.sql`,
-   `018_payouts_add_forgiveness.sql`, and `019_seed_absent_sync_baseline.sql`
-   are `ALTER TABLE`s or data seeds, and `015_delhi_holidays_2026_2027.sql`
-   is a data seed — none have a `CREATE TABLE`, so none auto-run. Find
-   each in the list and click its **Re-run** button once. Without the
-   first, the absent-sync (step 12 below) can't record the `'on_leave'`
-   attendance status; without the second, leave-types management (step
-   13) won't work; the third seeds a starter Delhi/India holiday calendar
-   (see step 11 below) — skip it if you'd rather add your own holidays
-   from scratch; without the fourth, setting a staff member's salary will
-   error (the reason dropdown needs its column); without the fifth,
-   "Forgive Deduction" on a payout will error; without the sixth, the
-   absent-sync (step 12) won't run at all.
+   `018_payouts_add_forgiveness.sql`, `019_seed_absent_sync_baseline.sql`,
+   and `020_lunch_breaks.sql` are `ALTER TABLE`s or data seeds, and
+   `015_delhi_holidays_2026_2027.sql` is a data seed — none have a
+   `CREATE TABLE`, so none auto-run. Find each in the list and click its
+   **Re-run** button once. Without the first, the absent-sync (step 12
+   below) can't record the `'on_leave'` attendance status; without the
+   second, leave-types management (step 13) won't work; the third seeds a
+   starter Delhi/India holiday calendar (see step 11 below) — skip it if
+   you'd rather add your own holidays from scratch; without the fourth,
+   setting a staff member's salary will error (the reason dropdown needs
+   its column); without the fifth, "Forgive Deduction" on a payout will
+   error; without the sixth, the absent-sync (step 12) won't run at all;
+   without the seventh, the staff-side "Lunch Start" button will error
+   (it needs `attendance_sessions.break_type`) and the lunch-duration
+   warning threshold setting won't exist.
 5. **Create the first admin.** Two options — either works:
    - **Via DB Tools:** on `https://www.digitalalipro.in/office/sql/index.php`
      (still in setup mode), scroll to **Admin Account** and fill in the
@@ -231,11 +234,11 @@ hosting. Deployed at
     /reports         attendance.php — flexible attendance summary + CSV export
     settings.php     Edit every settings row via one dynamic form
   /staff            Staff-facing pages: login, logout, dashboard, attendance
-                    (multiple check-ins/day supported), calendar (week/month/
-                    year holiday+leave+attendance view), work-report (own
-                    monthly session-by-session breakdown), leave, wfh, payout
-                    (read-only own history), profile (their own session,
-                    separate from /admin)
+                    (multiple check-ins/day + lunch start/over supported),
+                    calendar (week/month/year holiday+leave+attendance
+                    view), work-report (own monthly session-by-session
+                    breakdown), leave, wfh, payout (read-only own history),
+                    profile (their own session, separate from /admin)
   /assets/css      Design system stylesheet — CSS-variable light/dark
                    theming, sidebar shell, cards/forms/badges/tables
   /assets/js       Theme toggle + persistence, mobile sidebar drawer,
@@ -284,6 +287,7 @@ SQL still works too, for anything not covered by that form.)
 | `default_work_start_time` / `default_work_end_time` | Universal work hours, used when a staff member has no timing override | `09:30` / `18:30` |
 | `timezone` | Informational | `Asia/Kolkata` |
 | `attendance_grace_minutes` | Minutes after `default_work_start_time` (or a staff member's override start time) before a check-in counts as `'late'` | `15` |
+| `lunch_warning_minutes` | Minutes a lunch break can run before "Lunch Over" shows an over-limit warning (informational only, never blocks) | `60` |
 
 ## Holidays
 
@@ -321,6 +325,22 @@ breakdown of every session, total worked time, and a plain-language
 label (Below Target / On Target / Great Work / Excellent Work) comparing
 worked time to that day's scheduled hours — purely informational, it
 never affects payout.
+
+## Lunch breaks
+
+Built on top of the multi-session mechanism above — a lunch break is just
+a labeled session close/reopen pair, so worked-hours totals already
+exclude lunch time automatically. On **Attendance**, while checked in a
+staff member sees a **Lunch Start** button (once per day only); while on
+a lunch break they see **Lunch Over** (resumes the session) and **Check
+Out (end day)** (ends the day right from the break, no need to resume
+first). If a break runs past `lunch_warning_minutes` (default 60), Lunch
+Over shows a warning — informational, never blocking. Every lunch action
+is stamped into the day's notes, so it's visible in the admin attendance
+monitor with no separate UI needed there. See `CLAUDE.md` → "Attendance"
+→ Lunch breaks for the full write-up, including the known limitation that
+**Calendar**'s worked-hours column (unlike **Work Report**) doesn't yet
+exclude lunch time.
 
 ## Leave types
 

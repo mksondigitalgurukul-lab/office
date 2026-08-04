@@ -75,6 +75,7 @@ while ($cursor <= $monthEnd) {
                 'check_in_time'  => $attendance['check_in_time'],
                 'check_out_time' => $attendance['check_out_time'],
                 'recheckin_reason' => null,
+                'break_type' => null,
             ]];
         }
 
@@ -140,8 +141,11 @@ require __DIR__ . '/../includes/staff-header.php';
             </td>
             <td>
               <?php if ($row['sessions']): ?>
-                <?php foreach ($row['sessions'] as $s): ?>
+                <?php foreach ($row['sessions'] as $i => $s): ?>
                   <div><?= h($s['check_in_time']) ?> &ndash; <?= $s['check_out_time'] ? h($s['check_out_time']) : 'in progress' ?><?= !empty($s['recheckin_reason']) ? ' <span style="color:var(--color-text-muted);">(' . h($s['recheckin_reason']) . ')</span>' : '' ?></div>
+                  <?php if (($s['break_type'] ?? null) === 'lunch' && isset($row['sessions'][$i + 1])): ?>
+                    <div style="color:var(--color-text-muted); font-style:italic;">Lunch &mdash; <?= (int) round(max(0, strtotime($row['sessions'][$i + 1]['check_in_time']) - strtotime($s['check_out_time'])) / 60) ?>m</div>
+                  <?php endif; ?>
                 <?php endforeach; ?>
               <?php else: ?>
                 —

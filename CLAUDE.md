@@ -137,6 +137,9 @@ at the bottom for where to pick up next.
                                       to payouts (manual Re-run required) — see "Payout"
     019_seed_absent_sync_baseline.sql   Seed data — starting point for the page-visit
                                         absent-sync (manual Re-run required) — see "Attendance"
+    020_lunch_breaks.sql   ALTER — adds break_type to attendance_sessions + seeds the
+                           lunch_warning_minutes setting (manual Re-run required, like
+                           011/014/015/017/018/019) — see "Attendance" (Lunch breaks)
     index.php            Schema runner + DB dashboard + Admin Account section (see below)
     .htaccess             Blocks direct HTTP access to *.txt files (key.txt, schema_log.txt)
     key.txt               Admin management key — gitignored, created by the Admin Account section
@@ -228,13 +231,13 @@ database by hand in phpMyAdmin.
 | Table | Purpose |
 |---|---|
 | `admins` | Admin/manager login accounts. `role` is `admin` or `manager`. Password stored as `password_hash()`. |
-| `settings` | Key/value app config (`setting_key` PK, `setting_value`). Seeded with `company_name`, `default_work_start_time`, `default_work_end_time`, `timezone`, `attendance_grace_minutes`, and `last_absent_sync_date` (the page-visit absent-sync's checkpoint — see "Attendance" below). |
+| `settings` | Key/value app config (`setting_key` PK, `setting_value`). Seeded with `company_name`, `default_work_start_time`, `default_work_end_time`, `timezone`, `attendance_grace_minutes`, `last_absent_sync_date` (the page-visit absent-sync's checkpoint — see "Attendance" below), and `lunch_warning_minutes` (added in `020_...sql` — see "Attendance" &rarr; Lunch breaks). |
 | `office_locations` | Named office branches with an `ip_address`, for future WiFi-based attendance check-in. `is_active` flag. |
 | `holidays` | Company holiday dates. `applies_to` is `all` or `specific` (only `'all'` is functional — see below). Managed at `admin/holidays/index.php` — add one-off holidays, or bulk-generate the next year's Sundays. A `holiday_staff` join table is stubbed (commented out) in `004_holidays.sql` for targeting specific staff once the staff table exists — **not built yet**. |
 | `staff` | Employee records + their own login credentials. `work_mode` is `office`/`wfh`/`hybrid`. `status` is `active`/`inactive` (`inactive` = soft delete — the record is kept, and inactive staff cannot log in). `created_by` references the admin who created the record. |
 | `staff_work_time_history` | Append-only log of every work-timing change for a staff member — see "Work timing history convention" below. `set_by` references the admin who recorded the change. |
 | `attendance` | One row per staff member per day (unique on `staff_id` + `attendance_date`) — a **summary**: first check-in, latest check-out, computed `status`. `work_location` records how the (first) check-in was verified; `status` is always computed by the app, never entered directly by staff — see "Attendance" below. |
-| `attendance_sessions` | Every individual check-in/check-out segment within a day (FK to `attendance.id`, plus denormalized `staff_id`/`attendance_date` for direct querying). Lets a staff member check out and check back in the same day — see "Attendance" below. |
+| `attendance_sessions` | Every individual check-in/check-out segment within a day (FK to `attendance.id`, plus denormalized `staff_id`/`attendance_date` for direct querying). Lets a staff member check out and check back in the same day — see "Attendance" below. `break_type` (added in `020_...sql`, `ENUM('lunch')`, nullable) marks a session that was closed specifically for a lunch break, as opposed to a plain re-check-in — see "Attendance" &rarr; Lunch breaks. |
 | `leave_types` | Kinds of leave (`is_paid` flag, `is_active` flag added in `014_...sql`). Seeded with Sick, Casual, Paid (all paid) and Unpaid. Managed via `admin/leave-types/` — deactivated (never hard-deleted) types stay visible in historical data but drop out of the staff-side request dropdown. |
 | `leave_requests` | Staff-submitted leave requests (always `requested_by` = the staff member themself — no admin-initiated leave). `days_count` is a simple inclusive calendar-day count, no accrual rules. `status` starts `pending`; an admin sets `approved`/`rejected` plus `reviewed_by`/`reviewed_at`. |
 | `wfh_requests` | One request per staff member per day (unique on `staff_id` + `wfh_date`). Either staff-submitted (`created_by_type = 'staff'`, starts `pending`) or admin-assigned (`created_by_type = 'admin'`, `status` is `approved` immediately, `reviewed_by` stays `NULL`). See "Leave & WFH requests" below. |
@@ -436,6 +439,69 @@ letting a staff member check out and check back in the same day (see
   session rows — the page falls back to treating the summary row's
   check-in/check-out as a single synthetic session, so historical data
   displays correctly without a backfill migration.
+- **Lunch breaks** (`staff/attendance.php`, `sql/020_lunch_breaks.sql`,
+  manual Re-run required like 011/014/015/017/018/019): built entirely on
+  top of the multi-session mechanism above — a lunch break is just a
+  session close/reopen pair, tagged via a new `attendance_sessions.
+  break_type` column (`ENUM('lunch')`, `NULL` for every other close,
+  including a plain re-check-in) so the app can tell it apart. This means
+  `totalWorkedSeconds()` needed **zero changes** — a lunch gap between two
+  sessions was already excluded from worked time, since it only sums each
+  session's own `check_out - check_in` span.
+  - **"Lunch Start"** (shown only while a session is open, i.e. the staff
+    member is actively checked in): closes the current session exactly
+    like a normal check-out, but stamps `break_type = 'lunch'` on it and
+    a `"[Lunch started at HH:MM:SS]"` line onto the summary row's `notes`
+    — same append-only pattern as a re-check-in reason, so it's visible
+    in the admin attendance monitor with zero changes needed there.
+    Deliberately does **not** trigger the half-day status recompute that
+    a normal check-out does — recomputing mid-day, before the workday is
+    actually over, could wrongly flag someone half-day for having only
+    worked the morning so far. Only a genuine end-of-day check-out (either
+    path below) recomputes status.
+  - **Once-per-day limit:** the "Lunch Start" button is hidden (and the
+    action rejected server-side with an error if attempted directly) once
+    any of today's sessions already has `break_type = 'lunch'` — a
+    deliberate scope decision the user chose explicitly over an
+    unlimited-breaks alternative.
+  - **"Lunch Over"** (shown only while on a lunch break — no open session,
+    and the most-recently-closed session has `break_type = 'lunch'`):
+    opens a new `attendance_sessions` row (a plain check-in, `break_type
+    NULL`), clears the summary row's `check_out_time` back to `NULL`
+    (mirroring the re-check-in pattern), and stamps a
+    `"[Lunch ended at HH:MM:SS — Nm]"` note with the computed break length.
+    Re-verifies office WiFi the same informational way a re-check-in does
+    (a warning if not recognized, never blocking or altering
+    `work_location`).
+  - **Lunch duration warning:** if the break exceeds
+    `settings.lunch_warning_minutes` (seeded to `60` by `020_...sql`,
+    editable like any other setting on `admin/settings.php`), "Lunch
+    Over" shows an on-page warning and appends `" — over the Nm limit"`
+    to the same stamped note — informational only, never blocks ending
+    the break or working the rest of the day. A deliberate scope decision
+    the user chose explicitly over no enforcement at all.
+  - **Check Out is also available during a lunch break** (a deliberate
+    choice — the user chose this over restricting checkout to only the
+    "actively working" state): clicking it while on a lunch break skips
+    reopening a session entirely and finalizes the day directly — computes
+    `totalWorkedSeconds()`/half-day status against whatever's already
+    been worked, stamps `"[Ended day directly from lunch break at
+    HH:MM:SS]"`, and leaves `check_out_time` untouched (it already holds
+    the lunch-start closing time). Covers a staff member who starts lunch
+    and then decides not to come back that day.
+  - `staff/attendance.php`'s "Today's Sessions" table and
+    `staff/work-report.php`'s per-day session list both render an
+    inserted "Lunch — Nm" (or "Lunch — ongoing (Nm so far)" for a break
+    still in progress) row between the two sessions it falls between, so
+    the break is visible without being counted as its own session.
+  - **Known limitation:** `staff/calendar.php`'s past-day worked-hours
+    column still uses `formatWorkedHours()` on the summary row's raw
+    first-check-in/last-check-out span (a pre-existing simplification
+    that predates both multi-session support and lunch tracking), so it
+    will show lunch time as part of "worked hours" there — inconsistent
+    with the accurate `totalWorkedSeconds()`-based figure on
+    `staff/work-report.php`, which is the authoritative precise view.
+    Not fixed as part of this feature; flagged here for a future pass.
 
 ## Holidays
 
@@ -1258,6 +1324,33 @@ several stale/inconsistent nav links before Prompt 6), every page
   direct comparison — the sync's own count excludes that date); and an
   18-month-stale checkpoint correctly caps to exactly the most recent 90
   days rather than attempting the full gap, completing in ~150ms.
+- **Lunch Start / Lunch Over buttons for staff.** Built entirely on top of
+  the existing multi-session check-in architecture — a lunch break is a
+  labeled session close/reopen pair (`attendance_sessions.break_type =
+  'lunch'`, added by `sql/020_lunch_breaks.sql`), so `totalWorkedSeconds()`
+  needed no changes at all to correctly exclude lunch time from worked
+  hours. See "Attendance" above (Lunch breaks) for the full write-up,
+  including the three explicit design decisions the user chose: Check Out
+  stays available during a lunch break (skips reopening a session and
+  ends the day directly), lunch is limited to once per day, and a
+  `lunch_warning_minutes` setting (seeded to 60, editable on
+  `admin/settings.php`) drives an on-page + notes-stamped warning if a
+  break runs long — none of which are enforced/blocking, all informational.
+- Verified end-to-end against a live MariaDB instance: the full
+  check-in &rarr; Lunch Start &rarr; Lunch Over &rarr; Check Out cycle,
+  with `totalWorkedSeconds()` correctly excluding the lunch gap from the
+  half-day recomputation at final check-out; a second Lunch Start attempt
+  correctly blocked both server-side and in the UI (button hidden) once
+  a lunch break was already taken that day; a lunch break engineered past
+  `lunch_warning_minutes` correctly showing and stamping the over-limit
+  warning; Check Out clicked directly from the "on lunch break" state
+  (skipping Lunch Over) correctly ending the day without reopening a
+  session and stamping a distinct note; the admin attendance monitor
+  showing every lunch-related note with zero code changes needed there;
+  and both `staff/attendance.php`'s "Today's Sessions" table and
+  `staff/work-report.php`'s day-by-day session list correctly rendering
+  an inline "Lunch — Nm" (or "ongoing" while in progress) row between the
+  two sessions it falls between, in both light and dark mode.
 
 ## What's planned — V2 ideas
 

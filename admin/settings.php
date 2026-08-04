@@ -30,6 +30,8 @@ $labels = [
     'default_work_end_time'    => 'Default Work End Time',
     'timezone'                 => 'Timezone',
     'attendance_grace_minutes' => 'Attendance Grace Period (minutes)',
+    'lunch_warning_minutes'    => 'Lunch Break Warning Threshold (minutes)',
+    'last_absent_sync_date'    => 'Absent-Sync Synced Through (date)',
 ];
 
 $flash = $_SESSION['flash'] ?? null;
@@ -57,8 +59,10 @@ require __DIR__ . '/../includes/admin-header.php';
           $key   = $s['setting_key'];
           $label = $labels[$key] ?? ucwords(str_replace('_', ' ', $key));
           $type  = 'text';
-          if ($key === 'attendance_grace_minutes') {
+          if ($key === 'attendance_grace_minutes' || $key === 'lunch_warning_minutes') {
               $type = 'number';
+          } elseif ($key === 'last_absent_sync_date') {
+              $type = 'date';
           } elseif (substr($key, -5) === '_time') {
               $type = 'time';
           }
