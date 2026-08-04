@@ -140,6 +140,10 @@ at the bottom for where to pick up next.
     020_lunch_breaks.sql   ALTER — adds break_type to attendance_sessions + seeds the
                            lunch_warning_minutes setting (manual Re-run required, like
                            011/014/015/017/018/019) — see "Attendance" (Lunch breaks)
+    021_lunch_window.sql   Seed data — lunch_window_start_time/lunch_window_end_time
+                           settings restricting when "Lunch Start" is available (manual
+                           Re-run required, like 011/014/015/017/018/019/020) — see
+                           "Attendance" (Lunch breaks)
     index.php            Schema runner + DB dashboard + Admin Account section (see below)
     .htaccess             Blocks direct HTTP access to *.txt files (key.txt, schema_log.txt)
     key.txt               Admin management key — gitignored, created by the Admin Account section
@@ -231,7 +235,7 @@ database by hand in phpMyAdmin.
 | Table | Purpose |
 |---|---|
 | `admins` | Admin/manager login accounts. `role` is `admin` or `manager`. Password stored as `password_hash()`. |
-| `settings` | Key/value app config (`setting_key` PK, `setting_value`). Seeded with `company_name`, `default_work_start_time`, `default_work_end_time`, `timezone`, `attendance_grace_minutes`, `last_absent_sync_date` (the page-visit absent-sync's checkpoint — see "Attendance" below), and `lunch_warning_minutes` (added in `020_...sql` — see "Attendance" &rarr; Lunch breaks). |
+| `settings` | Key/value app config (`setting_key` PK, `setting_value`). Seeded with `company_name`, `default_work_start_time`, `default_work_end_time`, `timezone`, `attendance_grace_minutes`, `last_absent_sync_date` (the page-visit absent-sync's checkpoint — see "Attendance" below), `lunch_warning_minutes` (added in `020_...sql` — see "Attendance" &rarr; Lunch breaks), and `lunch_window_start_time`/`lunch_window_end_time` (added in `021_...sql`, default `12:00:00`/`15:00:00` — see "Attendance" &rarr; Lunch breaks). |
 | `office_locations` | Named office branches with an `ip_address`, for future WiFi-based attendance check-in. `is_active` flag. |
 | `holidays` | Company holiday dates. `applies_to` is `all` or `specific` (only `'all'` is functional — see below). Managed at `admin/holidays/index.php` — add one-off holidays, or bulk-generate the next year's Sundays. A `holiday_staff` join table is stubbed (commented out) in `004_holidays.sql` for targeting specific staff once the staff table exists — **not built yet**. |
 | `staff` | Employee records + their own login credentials. `work_mode` is `office`/`wfh`/`hybrid`. `status` is `active`/`inactive` (`inactive` = soft delete — the record is kept, and inactive staff cannot log in). `created_by` references the admin who created the record. |
@@ -464,6 +468,17 @@ letting a staff member check out and check back in the same day (see
     any of today's sessions already has `break_type = 'lunch'` — a
     deliberate scope decision the user chose explicitly over an
     unlimited-breaks alternative.
+  - **Time-of-day window:** "Lunch Start" is only shown (and only
+    accepted server-side) between `settings.lunch_window_start_time` and
+    `settings.lunch_window_end_time` (seeded to `12:00:00`/`15:00:00` by
+    `sql/021_lunch_window.sql`, editable like any other setting on
+    `admin/settings.php`). Outside the window the button is replaced with
+    a text hint showing when it'll become available; a direct POST
+    outside the window is rejected with the same message as an error.
+    The comparison is a plain string comparison against `date('H:i:s')`
+    in the app's configured timezone (`config.php`'s
+    `date_default_timezone_set()`), so it's independent of the server's
+    own system timezone.
   - **"Lunch Over"** (shown only while on a lunch break — no open session,
     and the most-recently-closed session has `break_type = 'lunch'`):
     opens a new `attendance_sessions` row (a plain check-in, `break_type
@@ -1351,6 +1366,28 @@ several stale/inconsistent nav links before Prompt 6), every page
   `staff/work-report.php`'s day-by-day session list correctly rendering
   an inline "Lunch — Nm" (or "ongoing" while in progress) row between the
   two sessions it falls between, in both light and dark mode.
+- **Lunch Start restricted to a time-of-day window.** "Lunch Start" now
+  only appears (and is only accepted server-side) between
+  `settings.lunch_window_start_time` and `settings.lunch_window_end_time`
+  (`sql/021_lunch_window.sql`, seeded to `12:00:00`/`15:00:00`, editable
+  on `admin/settings.php` — both keys end in `_time` so they pick up the
+  existing time-input rendering with no extra code). Outside the window
+  the button is replaced with a "Lunch Start available H:MM AM–H:MM PM"
+  hint instead of just disappearing silently.
+- Verified end-to-end against a live MariaDB instance: with the app's
+  configured timezone outside the default window, the button correctly
+  hid itself and showed the availability hint, and a direct POST of
+  `lunch_start` was correctly rejected server-side with the same
+  window message — confirming the restriction isn't just a UI nicety.
+- **"Use this IP" suggestion on office-location forms.** Both
+  `admin/office-locations/add.php` and `edit.php` now show the admin's
+  own current request IP (`getClientIp()` — the same value the check-in
+  flow itself compares against) next to the IP Address field, with a
+  one-click "use this IP" link (plain inline `onchange`-style JS, same
+  pattern as the salary-reason "Other" toggle) that fills the field —
+  so an admin standing on the office WiFi they're registering doesn't
+  need a separate "what's my IP" lookup. No schema change; purely a
+  convenience read of the same request data already used elsewhere.
 
 ## What's planned — V2 ideas
 

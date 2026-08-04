@@ -62,6 +62,11 @@ require __DIR__ . '/../../includes/admin-header.php';
       <div class="field">
         <label for="ip_address">IP Address</label>
         <input type="text" id="ip_address" name="ip_address" required value="<?= h($values['ip_address']) ?>">
+        <span class="field-hint">
+          Your current IP is <strong><?= h(getClientIp()) ?></strong> —
+          if you're on the office WiFi right now,
+          <a href="#" onclick="document.getElementById('ip_address').value='<?= h(getClientIp()) ?>'; return false;">use this IP</a>.
+        </span>
       </div>
       <div class="field">
         <label><input type="checkbox" name="is_active" <?= $values['is_active'] ? 'checked' : '' ?>> Active</label>

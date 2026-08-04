@@ -54,6 +54,9 @@ function loadToday(PDO $pdo, int $staffId, string $today): array
 [$todayRow, $todaySessions, $openSession, $lastClosedSession, $lunchTakenToday, $onLunchBreak] = loadToday($pdo, $staff['id'], $today);
 $isFirstSessionToday = count($todaySessions) === 0;
 $lunchWarningMinutes = (int) getSetting('lunch_warning_minutes', '60');
+$lunchWindowStart     = getSetting('lunch_window_start_time', '12:00:00');
+$lunchWindowEnd       = getSetting('lunch_window_end_time', '15:00:00');
+$inLunchWindow        = date('H:i:s') >= $lunchWindowStart && date('H:i:s') <= $lunchWindowEnd;
 
 $error   = '';
 $warning = '';
@@ -133,6 +136,8 @@ if (!$blocked && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = "You're not currently checked in.";
         } elseif ($lunchTakenToday) {
             $error = "You've already taken your lunch break today.";
+        } elseif (!$inLunchWindow) {
+            $error = 'Lunch Start is only available between ' . date('g:i A', strtotime($lunchWindowStart)) . ' and ' . date('g:i A', strtotime($lunchWindowEnd)) . '.';
         } else {
             $stmt = $pdo->prepare('UPDATE attendance_sessions SET check_out_time = ?, check_out_ip = ?, break_type = ? WHERE id = ?');
             $stmt->execute([$now, $ip, 'lunch', $openSession['id']]);
@@ -286,11 +291,13 @@ require __DIR__ . '/../includes/staff-header.php';
             <input type="hidden" name="action" value="check_out">
             <button type="submit" class="btn">Check Out</button>
           </form>
-          <?php if (!$lunchTakenToday): ?>
+          <?php if (!$lunchTakenToday && $inLunchWindow): ?>
             <form method="post">
               <input type="hidden" name="action" value="lunch_start">
               <button type="submit" class="btn btn-secondary">Lunch Start</button>
             </form>
+          <?php elseif (!$lunchTakenToday): ?>
+            <span style="color:var(--color-text-muted); align-self:center;">Lunch Start available <?= h(date('g:i A', strtotime($lunchWindowStart))) ?>&ndash;<?= h(date('g:i A', strtotime($lunchWindowEnd))) ?></span>
           <?php endif; ?>
         </div>
       <?php elseif ($onLunchBreak): ?>

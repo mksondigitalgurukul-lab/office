@@ -31,6 +31,8 @@ $labels = [
     'timezone'                 => 'Timezone',
     'attendance_grace_minutes' => 'Attendance Grace Period (minutes)',
     'lunch_warning_minutes'    => 'Lunch Break Warning Threshold (minutes)',
+    'lunch_window_start_time'  => 'Lunch Start Button Available From',
+    'lunch_window_end_time'    => 'Lunch Start Button Available Until',
     'last_absent_sync_date'    => 'Absent-Sync Synced Through (date)',
 ];
 
