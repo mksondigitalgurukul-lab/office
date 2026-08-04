@@ -16,6 +16,19 @@ if (!$staff) {
     exit;
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reset_password') {
+    $newPassword = substr(bin2hex(random_bytes(6)), 0, 10);
+    $stmt = $pdo->prepare('UPDATE staff SET password_hash = ? WHERE id = ?');
+    $stmt->execute([password_hash($newPassword, PASSWORD_DEFAULT), $id]);
+
+    $_SESSION['flash'] = [
+        'type' => 'success',
+        'text' => "Password reset for {$staff['full_name']}. New password: {$newPassword} — shown once, copy it now and share it with them directly.",
+    ];
+    header('Location: view.php?id=' . $id);
+    exit;
+}
+
 $timing = getCurrentWorkTiming($id);
 
 $stmt = $pdo->prepare(
@@ -53,6 +66,10 @@ require __DIR__ . '/../../includes/admin-header.php';
       <a href="../attendance/staff.php?id=<?= (int) $id ?>" class="btn btn-sm btn-secondary">Attendance History</a>
       <a href="../payout/index.php?staff_id=<?= (int) $id ?>" class="btn btn-sm btn-secondary">Payouts</a>
       <a href="edit.php?id=<?= (int) $id ?>" class="btn btn-sm btn-secondary">Edit</a>
+      <form method="post" style="display:inline;" data-confirm="Reset <?= h($staff['full_name']) ?>'s password? A new one will be generated and shown here once — you'll need to share it with them directly.">
+        <input type="hidden" name="action" value="reset_password">
+        <button type="submit" class="btn btn-sm btn-secondary">Reset Password</button>
+      </form>
       <a href="index.php" class="btn btn-sm btn-secondary">Back to list</a>
     </div>
   </div>

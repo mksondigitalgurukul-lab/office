@@ -677,8 +677,16 @@ several stale/inconsistent nav links before Prompt 6), every page
     session data, or `null`.
 - Login checks `status = 'active'` — inactive (soft-deleted) staff cannot
   log in even with a correct password.
-- Staff can only change their own password from `/staff/dashboard.php`;
-  no other self-service field editing exists yet.
+- Staff can change their own password from `/staff/profile.php`; no other
+  self-service field editing exists yet.
+- An admin can also reset a staff member's password directly from
+  `admin/staff/view.php` ("Reset Password" button, confirm dialog first).
+  It generates a new random password the same way `admin/staff/add.php`'s
+  auto-generate option does (`substr(bin2hex(random_bytes(6)), 0, 10)`),
+  overwrites `password_hash` immediately, and shows the new password once
+  in the success flash — same "shown once, copy it now" pattern as staff
+  creation. There's no email/SMS delivery (see "V2 ideas" below), so the
+  admin has to relay it to the staff member directly.
 
 ### Shared
 
@@ -716,7 +724,9 @@ several stale/inconsistent nav links before Prompt 6), every page
   password change, and simultaneous admin+staff sessions in one browser.
 - Also added since Prompt 2 shipped: a key-gated **Admin Account** section
   on `sql/index.php` (create the first admin, or reset an existing admin's
-  password) — see "How `sql/index.php` works" above.
+  password) — see "How `sql/index.php` works" above; and a **Reset
+  Password** button on `admin/staff/view.php` letting an admin generate
+  and view a new password for that staff member — see "Staff auth" above.
 
 **Prompt 3 — Attendance:**
 - `attendance` table + seeded `attendance_grace_minutes` setting.
