@@ -1,4 +1,4 @@
-# Runtime / environment — copy config-exmaple.php to config.php and edit
+# Runtime / environment — copy config-example.php to config.php and edit
 # it with real credentials; config.php itself is never tracked, so a
 # `git pull` on the server never overwrites live credentials.
 config.php

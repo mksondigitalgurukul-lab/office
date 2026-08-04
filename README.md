@@ -29,7 +29,7 @@ hosting. Deployed at
    tracked in git (so a future `git pull` on the server never overwrites
    your live credentials) — copy the template and edit the copy:
    ```bash
-   cp config-exmaple.php config.php
+   cp config-example.php config.php
    ```
    Then fill in the real values in `config.php`:
    ```php
@@ -113,7 +113,7 @@ hosting. Deployed at
 
 ## Local development
 
-1. Copy `config-exmaple.php` to `config.php` (`cp config-exmaple.php
+1. Copy `config-example.php` to `config.php` (`cp config-example.php
    config.php`) and point it at a local MySQL/MariaDB database, using
    `127.0.0.1` or `localhost`.
 2. Run PHP's built-in server from the project root:
@@ -154,7 +154,7 @@ hosting. Deployed at
                    plus .htaccess and a gitignored key.txt (admin
                    management key, created on first use)
   /cron            mark-absent.php — daily absent-marker, see step 11 above
-  config-exmaple.php  Tracked config template — copy to config.php and edit
+  config-example.php  Tracked config template — copy to config.php and edit
   config.php       DB credentials + CRON_SECRET (gitignored — never committed)
   index.php        Redirects to /admin/login.php
   create-admin.php One-time first-admin creation script

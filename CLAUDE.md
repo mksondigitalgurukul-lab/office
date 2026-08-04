@@ -61,8 +61,8 @@ requests and payout are not built yet.
   /cron
     mark-absent.php       Daily script: marks active staff with no attendance row for
                           yesterday as 'absent' (skips holidays) — see "Attendance" below
-  config-exmaple.php     Tracked config template (DB credentials + CRON_SECRET placeholders)
-  config.php            Copied from config-exmaple.php on deploy — gitignored, never committed
+  config-example.php     Tracked config template (DB credentials + CRON_SECRET placeholders)
+  config.php            Copied from config-example.php on deploy — gitignored, never committed
   .gitignore
   index.php              Redirects to /admin/login.php
   create-admin.php       One-time script to create the first admin
@@ -77,8 +77,8 @@ requests and payout are not built yet.
   (`DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASS`).
 - PDO is configured with `ERRMODE_EXCEPTION` and `FETCH_ASSOC` by default.
 - `config.php` itself is **not tracked in git** (`.gitignore`) — only
-  `config-exmaple.php` is committed, holding placeholder values. On the
-  real server (or for local dev), copy it (`cp config-exmaple.php
+  `config-example.php` is committed, holding placeholder values. On the
+  real server (or for local dev), copy it (`cp config-example.php
   config.php`) and edit the copy with real credentials. This means a
   future `git pull` on the server never overwrites live credentials —
   don't commit `config.php` itself back to the repo.
@@ -242,7 +242,7 @@ check-in/out, `admin/attendance/*` for the monitor). All logic lives in
   holiday. Idempotent: safe to re-run, existing rows are left untouched.
   Runs via CLI with no auth; if triggered over HTTP instead (e.g. a
   cPanel "URL" cron job) it requires `?key=` to match `CRON_SECRET` in
-  `config.php` (placeholder in `config-exmaple.php` — change it on the
+  `config.php` (placeholder in `config-example.php` — change it on the
   real server's `config.php`).
 
 ## Auth approach
