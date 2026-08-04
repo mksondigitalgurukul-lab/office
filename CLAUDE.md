@@ -47,7 +47,9 @@ leave/WFH requests, and payout are not built yet.
     004_holidays.sql     Schema file — holidays table (+ commented holiday_staff stub)
     005_staff.sql         Schema file — staff table
     006_staff_work_time_history.sql   Schema file — staff_work_time_history table
-    index.php            Schema runner + DB dashboard (see below)
+    index.php            Schema runner + DB dashboard + Admin Account section (see below)
+    .htaccess             Blocks direct HTTP access to *.txt files (key.txt, schema_log.txt)
+    key.txt               Admin management key — gitignored, created by the Admin Account section
   config.php            DB credentials (placeholders in git)
   .gitignore
   index.php              Redirects to /admin/login.php
@@ -108,6 +110,24 @@ database by hand in phpMyAdmin.
   exists (via `create-admin.php`), the page locks behind `requireLogin()`
   like every other admin page. Do not remove this exception without adding
   another way to bootstrap the very first admin.
+- An **Admin Account** section provides an in-browser alternative/companion
+  to `create-admin.php`:
+  - While `admins` has zero rows, it shows a **Create Admin** form (name,
+    email, password, plus a **management key** the operator chooses).
+    That key is written to `sql/key.txt` on first use.
+  - Once an admin exists, it instead shows an **Update Password** form
+    (pick an existing admin, set a new password), gated by that same
+    management key (checked with `hash_equals()` against `sql/key.txt`).
+  - `sql/key.txt` is plain text, gitignored, `chmod 0600`, and blocked
+    from direct HTTP access by `sql/.htaccess` (Apache — not enforced
+    under `php -S` in local dev) — treat it as a shared secret the site
+    operator keeps, separate from any admin's login password. There's no
+    UI to change it; edit `sql/key.txt` on the server directly if it needs
+    to change, or delete it to let the next admin-creation set a new one
+    (only possible again once `admins` is empty).
+  - Every create/reset via this section is logged to `schema_log.txt` like
+    other DB Tools actions, but the log entry never contains the password
+    or key — only the target admin's email.
 
 ## Tables (update this section whenever a table is added)
 

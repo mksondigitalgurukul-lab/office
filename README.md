@@ -38,15 +38,18 @@ hosting. Deployed at
    open in **setup mode** — it will automatically create the `admins`,
    `settings`, `office_locations`, `holidays`, `staff`, and
    `staff_work_time_history` tables and show you their structure.
-5. **Create the first admin.** Visit
-   `https://www.digitalalipro.in/office/create-admin.php` and fill in a
-   name, email, and password (8+ characters). This can only be run once —
-   it refuses to run again as soon as one admin account exists.
-
-   Alternatively, over SSH:
-   ```bash
-   php create-admin.php "Your Name" you@example.com "a-strong-password"
-   ```
+5. **Create the first admin.** Two options — either works:
+   - **Via DB Tools:** on `https://www.digitalalipro.in/office/sql/index.php`
+     (still in setup mode), scroll to **Admin Account** and fill in the
+     "Create Admin" form: name, email, password, and a **management key**
+     you choose yourself. Remember that key — it's saved to `sql/key.txt`
+     on the server and will be required later to reset any admin's
+     password from that same section.
+   - **Via `create-admin.php`:** visit
+     `https://www.digitalalipro.in/office/create-admin.php` and fill in a
+     name, email, and password (8+ characters). This can only be run once —
+     it refuses to run again as soon as one admin account exists. Or over
+     SSH: `php create-admin.php "Your Name" you@example.com "a-strong-password"`.
 6. **Secure `create-admin.php`.** After creating the first admin, delete
    `create-admin.php` from the server (or block access to it in
    `.htaccess`) — it's a one-time setup script and shouldn't stay reachable.
@@ -64,6 +67,12 @@ hosting. Deployed at
    Staff then log in separately at
    `https://www.digitalalipro.in/office/staff/login.php` with that email
    and password.
+9. **Resetting an admin's password later.** Log in and go to **DB Tools**
+   (`/sql/index.php`) → **Admin Account**. Once at least one admin exists,
+   this section shows an "Update Password" form instead of "Create Admin" —
+   pick the admin, set a new password, and enter the management key from
+   step 5. If you've lost that key, edit `sql/key.txt` directly on the
+   server (via cPanel File Manager or SSH) to set a new one.
 
 ## Local development
 
@@ -95,8 +104,10 @@ hosting. Deployed at
                    helpers), staff_auth.php (staff session helpers),
                    functions.php (escaping + settings + work-timing helpers)
   /sql             Numbered schema files (001_admins.sql, ...) + index.php
-                   (the schema runner / DB dashboard / ad-hoc SQL tool —
-                   see CLAUDE.md for how it works)
+                   (the schema runner / DB dashboard / ad-hoc SQL tool /
+                   Admin Account section — see CLAUDE.md for how it works),
+                   plus .htaccess and a gitignored key.txt (admin
+                   management key, created on first use)
   config.php       DB credentials (edit this on the server)
   index.php        Redirects to /admin/login.php
   create-admin.php One-time first-admin creation script
