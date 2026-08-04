@@ -14,6 +14,7 @@
 $navItems = [
     ['key' => 'dashboard', 'label' => 'Dashboard', 'href' => 'dashboard.php'],
     ['key' => 'attendance', 'label' => 'Attendance', 'href' => 'attendance.php'],
+    ['key' => 'calendar', 'label' => 'Calendar', 'href' => 'calendar.php'],
     ['key' => 'leave', 'label' => 'Leave', 'href' => 'leave.php'],
     ['key' => 'wfh', 'label' => 'WFH', 'href' => 'wfh.php'],
     ['key' => 'payout', 'label' => 'Payout', 'href' => 'payout.php'],

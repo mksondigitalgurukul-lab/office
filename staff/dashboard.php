@@ -106,6 +106,7 @@ require __DIR__ . '/../includes/staff-header.php';
 
   <div class="quick-links" style="margin-bottom:20px;">
     <a href="attendance.php" class="quick-link">Check In / Out</a>
+    <a href="calendar.php" class="quick-link">View Calendar</a>
     <a href="leave.php" class="quick-link">Request Leave</a>
     <a href="wfh.php" class="quick-link">Request WFH</a>
     <a href="profile.php" class="quick-link">Change Password</a>

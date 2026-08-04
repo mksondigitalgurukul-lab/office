@@ -125,6 +125,20 @@ function isHalfDay(string $scheduledStart, string $scheduledEnd, string $checkIn
     return $workedSeconds < ($scheduledSeconds / 2);
 }
 
+/** Formats a check-in/check-out pair as "Xh Ym" worked, or null if either is missing/invalid. */
+function formatWorkedHours(?string $checkInTime, ?string $checkOutTime): ?string
+{
+    if ($checkInTime === null || $checkOutTime === null) {
+        return null;
+    }
+    $seconds = strtotime($checkOutTime) - strtotime($checkInTime);
+    if ($seconds <= 0) {
+        return null;
+    }
+    $minutes = (int) round($seconds / 60);
+    return intdiv($minutes, 60) . 'h ' . ($minutes % 60) . 'm';
+}
+
 /** Whether a staff member has an approved WFH request for a specific date. */
 function hasApprovedWfh(int $staffId, string $date): bool
 {

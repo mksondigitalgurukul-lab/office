@@ -51,12 +51,15 @@ hosting. Deployed at
    `staff_work_time_history`, `attendance`, `leave_types` (seeded with
    Sick/Casual/Paid/Unpaid), `leave_requests`, `wfh_requests`,
    `staff_salary`, and `payouts` tables and show you their structure.
-   **Two files need a manual step**: `011_attendance_add_on_leave_status.sql`
-   and `014_leave_types_add_is_active.sql` are both `ALTER TABLE`s (no
-   `CREATE TABLE`), so neither auto-runs — find each in the list and click
-   its **Re-run** button once. Without the first, `cron/mark-absent.php`
+   **Three files need a manual step**: `011_attendance_add_on_leave_status.sql`
+   and `014_leave_types_add_is_active.sql` are `ALTER TABLE`s, and
+   `015_delhi_holidays_2026_2027.sql` is a data seed — none have a
+   `CREATE TABLE`, so none auto-run. Find each in the list and click its
+   **Re-run** button once. Without the first, `cron/mark-absent.php`
    can't record the `'on_leave'` attendance status (see step 12 below);
-   without the second, leave-types management (step 13) won't work.
+   without the second, leave-types management (step 13) won't work;
+   the third seeds a starter Delhi/India holiday calendar (see step 11
+   below) — skip it if you'd rather add your own holidays from scratch.
 5. **Create the first admin.** Two options — either works:
    - **Via DB Tools:** on `https://www.digitalalipro.in/office/sql/index.php`
      (still in setup mode), scroll to **Admin Account** and fill in the
@@ -98,11 +101,18 @@ hosting. Deployed at
     from an office machine) — this is what `staff/attendance.php`
     compares check-ins against to set `work_location = 'office_verified'`.
     Deactivate (don't delete) a location if it's no longer valid.
-11. **Set up your holiday calendar.** Go to **Holidays** → add company
-    holidays one at a time (date + name), and use **Generate Sundays**
-    (enter how many months ahead — 12 covers a full year) to bulk-add
-    every upcoming Sunday as a default day off, instead of adding 52 rows
-    by hand. Any holiday fully blocks staff check-in for that day —
+11. **Set up your holiday calendar.** If you clicked **Re-run** on
+    `015_delhi_holidays_2026_2027.sql` in step 4, a starter set of Delhi/
+    India holidays through end of 2027 is already there — open
+    **Holidays** and double-check the ones flagged `"(estimate —
+    verify)"` in their name against the official gazette (they're
+    lunar-calendar festivals whose exact date I couldn't be fully certain
+    of two years out), and delete/re-add anything that's off by a day.
+    Otherwise, go to **Holidays** → add company holidays one at a time
+    (date + name), and use **Generate Sundays** (enter how many months
+    ahead — 12 covers a full year) to bulk-add every upcoming Sunday as a
+    default day off, instead of adding 52 rows by hand. Any holiday fully
+    blocks staff check-in for that day —
     *except* Sundays specifically, which show an optional "Check In
     (Extra Work)" button so someone can still log a normal attendance row
     if they choose to work that day (it doesn't automatically add
@@ -204,6 +214,7 @@ hosting. Deployed at
     /reports         attendance.php — flexible attendance summary + CSV export
     settings.php     Edit every settings row via one dynamic form
   /staff            Staff-facing pages: login, logout, dashboard, attendance,
+                    calendar (week/month/year holiday+leave+attendance view),
                     leave, wfh, payout (read-only own history), profile
                     (their own session, separate from /admin)
   /assets/css      Design system stylesheet — CSS-variable light/dark
@@ -265,6 +276,16 @@ show an extra "Check In (Extra Work)" option so someone can still log
 attendance if they choose to work, without affecting payout automatically
 (add a manual bonus on that payout if you want to pay for it). See
 `CLAUDE.md` → "Holidays" for the full rule.
+
+A starter Delhi/India holiday calendar (through end of 2027) can be
+seeded via `sql/015_delhi_holidays_2026_2027.sql` — see step 4/11 above.
+Fixed-date holidays in it are certain; movable festival dates are
+best-estimates flagged in their name, worth double-checking against the
+official gazette.
+
+Staff can browse the full holiday calendar (plus their own leave/WFH and
+past attendance) at **Calendar** in their nav — week, month, or year
+view, with Previous/Today/Next navigation.
 
 ## Leave types
 

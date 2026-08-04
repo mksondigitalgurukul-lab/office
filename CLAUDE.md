@@ -69,6 +69,9 @@ at the bottom for where to pick up next.
                        stat cards + quick links (check in/out, leave, WFH, profile) +
                        "Upcoming" table (holidays + this staff member's own approved leave/WFH)
     attendance.php      Today's check-in/check-out status + buttons; holiday-skip
+    calendar.php          Week/month/year calendar — holidays, own leave/WFH (pending or
+                          approved), and past attendance (worked hours) per day — see
+                          "Holidays" below
     leave.php            Submit a leave request, see own history + a simple per-type balance
     wfh.php              Submit a WFH request for one date, see own history
     payout.php           Read-only list of this staff member's own payouts (Prompt 6)
@@ -113,6 +116,15 @@ at the bottom for where to pick up next.
     013_payouts.sql        Schema file — payouts table
     014_leave_types_add_is_active.sql   ALTER — adds is_active to leave_types (also does
                                         NOT auto-run — click "Re-run" for it once, like 011)
+    015_delhi_holidays_2026_2027.sql   Seed data — commonly observed Delhi/India holidays
+                                       from 2026-08 through end of 2027 (fixed-date ones
+                                       certain, 2026 lunar-festival ones estimated/flagged
+                                       "verify", 2027 lunar festivals deliberately omitted —
+                                       see the file's own header comment). No CREATE TABLE,
+                                       so it does NOT auto-run either — click "Re-run" once.
+                                       Every INSERT is guarded by a NOT EXISTS check on
+                                       `holiday_date` (no unique constraint on that column),
+                                       so re-running it is always safe.
     index.php            Schema runner + DB dashboard + Admin Account section (see below)
     .htaccess             Blocks direct HTTP access to *.txt files (key.txt, schema_log.txt)
     key.txt               Admin management key — gitignored, created by the Admin Account section
@@ -375,6 +387,40 @@ whatever rows exist in the table, regardless of how they got there.
   few weeks. Weekly Sundays are still fully visible on
   `admin/holidays/index.php`; they're just not "upcoming news" for a
   staff member the way a one-off holiday or their own approved leave is.
+- **Staff calendar** (`staff/calendar.php`) is the fuller, filterable
+  counterpart to the dashboard's "Upcoming" list — a week/month/year
+  view (`?view=week|month|year&date=YYYY-MM-DD`, with Previous/Today/Next
+  navigation) showing, per day: the holiday name (if any, from the
+  company-wide `holidays` table — same one `admin/holidays/index.php`
+  manages), this staff member's own leave/WFH request for that date
+  (type + status, `pending` or `approved` — `rejected` is excluded, it's
+  not "on the calendar"), and their attendance for that date. Unlike the
+  dashboard list, this one does **not** exclude Sundays — a full week/
+  month naturally only has ~4-5 of them, so they don't crowd anything
+  out here.
+  - **Past dates:** the attendance column shows the computed
+    `status` badge (via `badgeVariant()`) plus total worked hours via
+    `formatWorkedHours($checkInTime, $checkOutTime)` (new helper in
+    `includes/functions.php`, `"Xh Ym"` from the two `TIME` columns, or
+    nothing if either is missing). A date with no attendance row shows
+    `"No record"`; a date before `staff.joined_date` shows nothing. A
+    holiday with no attendance row shows `"Not worked"` — but if the
+    staff member *did* check in (a worked Sunday, see above), the
+    attendance column still shows their normal worked-hours info
+    alongside the holiday name, since both are simultaneously true for
+    that date.
+  - **Future dates:** with no holiday and no leave/WFH request, the
+    attendance column explicitly reads `"Working day"` (not left blank)
+    — a deliberate literal per this feature's own request. A future date
+    with a pending or approved leave/WFH shows it labeled with its
+    status badge.
+  - **Year view** groups the 12 months as separate `<details>` blocks
+    (only the current month starts expanded) rather than rendering ~365
+    rows in one table — same underlying per-day data as week/month, just
+    chunked for usability. `buildCalendarRow()` and `renderCalendarTable()`
+    are page-local helper functions inside `calendar.php` (not
+    `includes/functions.php`) since they're single-page presentation
+    logic, not reused elsewhere.
 
 ## Leave & WFH requests
 
@@ -587,8 +633,8 @@ only the current page title (no duplicate nav).
   **Overview** (Dashboard), **People** (Staff, Attendance, Leave, WFH),
   **Money** (Payout, Reports), **Admin** (Leave Types, Holidays, Office
   Locations, Settings, DB Tools).
-- **Staff sidebar** is a flat list: Dashboard, Attendance, Leave, WFH,
-  Payout, Profile.
+- **Staff sidebar** is a flat list: Dashboard, Attendance, Calendar,
+  Leave, WFH, Payout, Profile.
 - The active page's nav link gets the `.nav-link.active` class (solid
   primary-color background) via a string comparison the page sets itself
   (`$activeNav`, see "Shared header/footer includes" below).
@@ -661,8 +707,8 @@ several stale/inconsistent nav links before Prompt 6), every page
 - **`includes/staff-header.php`** / **`includes/staff-footer.php`** —
   same pattern for `/staff/*.php`, simpler since every staff page is at
   the same depth (no `$basePath` needed): set `$pageTitle`, `$activeNav`
-  (`dashboard`, `attendance`, `leave`, `wfh`, `payout`, `profile`), and
-  have `$staff` in scope.
+  (`dashboard`, `attendance`, `calendar`, `leave`, `wfh`, `payout`,
+  `profile`), and have `$staff` in scope.
 - A page's actual link *targets* never changed in this pass — only how
   the nav markup generating them is authored (one shared loop instead of
   ~30 copies of a hand-written `<nav>`), which is what made a full "audit
@@ -958,6 +1004,27 @@ several stale/inconsistent nav links before Prompt 6), every page
   `notes` stamped, visible in the admin attendance monitor), and
   `cron/mark-absent.php` still skipping Sundays entirely for staff who
   didn't opt to work.
+- `sql/015_delhi_holidays_2026_2027.sql` — seeds commonly observed Delhi/
+  India holidays from 2026-08 through end of 2027 (manual "Re-run"
+  required, like 011/014 — see the `/sql` listing). Fixed-date holidays
+  are certain; 2026's lunar-calendar festivals are best-estimate and
+  flagged `"(estimate — verify)"` in their `name`; 2027's lunar festivals
+  are deliberately left out since the official calendar for that far out
+  wasn't published as of this seed file's authoring — add them via
+  `admin/holidays/index.php` once it is.
+- `staff/calendar.php` — a new staff-facing week/month/year calendar
+  (holidays + own leave/WFH + past attendance with worked hours) — see
+  "Holidays" above for the full write-up. Added `formatWorkedHours()` to
+  `includes/functions.php` to support it. Both admin and staff sidebars
+  gained nav links (**Admin → Holidays**, staff **Calendar**).
+- Verified end-to-end: re-running `015_...sql` twice inserted the same
+  14 rows both times (idempotent), all three calendar views (week/month/
+  year) render without errors, a past worked day shows the correct
+  status badge and worked-hours string, a future pending-leave date shows
+  the leave type + `Pending` badge, a holiday date with no check-in shows
+  `"Not worked"`, an ordinary future date shows `"Working day"`, and the
+  year view's per-month `<details>` blocks open only for the current
+  month by default.
 
 ## What's planned — V2 ideas
 
