@@ -9,10 +9,11 @@ company's own staff (not multi-company / multi-tenant). It runs on plain PHP
 (no framework) + MySQL over PDO, with session-based auth, deployed to cPanel
 shared hosting at `https://www.digitalalipro.in/office`.
 
-This is a **multi-prompt build**. This document reflects **Prompt 2 of 5**:
-the foundation (Prompt 1) plus staff management, staff login, and
-per-employee work-time overrides with full history. Attendance check-in,
-leave/WFH requests, and payout are not built yet.
+This is a **multi-prompt build**. This document reflects **Prompt 3 of 5**:
+the foundation (Prompt 1), staff management (Prompt 2), and now daily
+attendance check-in/check-out with office-WiFi verification, an admin
+attendance monitor, and a daily absent-marking cron script. Leave/WFH
+requests and payout are not built yet.
 
 ## Folder structure
 
@@ -26,12 +27,17 @@ leave/WFH requests, and payout are not built yet.
       index.php       List staff — filter by status/department/work_mode, search by name/email
       add.php         Add staff form + create (initial password or auto-generate, shown once)
       edit.php        Edit staff fields + status (active/inactive = soft delete)
-      view.php        Staff profile: current work timing + full timing history
+      view.php        Staff profile: current work timing + full timing history + link to attendance history
       set-timing.php  Insert a new staff_work_time_history row (default or custom hours)
+    /attendance        Attendance monitor (login-protected, admin session)
+      index.php       Today/date view — filter by department/work_mode, highlights late/unverified rows
+      staff.php       Per-staff attendance history (last 60 records)
+      edit.php        Manual add/edit of one staff's attendance row for one date (logs the edit in notes)
   /staff              Staff-facing pages (staff session, separate from admin)
     login.php         Email + password login for staff accounts
     logout.php         Destroys staff session, redirects to login
     dashboard.php      Welcome + work mode/timing + change-password form + nav stub
+    attendance.php      Today's check-in/check-out status + buttons; holiday-skip
   /assets
     /css/style.css     Shared styles for all pages
     /js/main.js         Small shared UI behaviors (confirm dialogs)
@@ -39,7 +45,8 @@ leave/WFH requests, and payout are not built yet.
     db.php              PDO connection (getDB())
     auth.php            Admin session helpers: requireLogin(), loginAdmin(), logoutAdmin(), currentAdmin()
     staff_auth.php       Staff session helpers: requireStaffLogin(), loginStaff(), logoutStaff(), currentStaff()
-    functions.php       h() escaping helper, getSetting()/setSetting(), getCurrentWorkTiming()
+    functions.php       h(), getSetting()/setSetting(), getCurrentWorkTiming(), and the attendance
+                        helpers described below (getClientIp(), isOfficeIp(), etc.)
   /sql
     001_admins.sql       Schema file — admins table
     002_settings.sql     Schema file — settings table + seed rows
@@ -47,10 +54,14 @@ leave/WFH requests, and payout are not built yet.
     004_holidays.sql     Schema file — holidays table (+ commented holiday_staff stub)
     005_staff.sql         Schema file — staff table
     006_staff_work_time_history.sql   Schema file — staff_work_time_history table
+    007_attendance.sql    Schema file — attendance table + seeds attendance_grace_minutes setting
     index.php            Schema runner + DB dashboard + Admin Account section (see below)
     .htaccess             Blocks direct HTTP access to *.txt files (key.txt, schema_log.txt)
     key.txt               Admin management key — gitignored, created by the Admin Account section
-  config.php            DB credentials (placeholders in git)
+  /cron
+    mark-absent.php       Daily script: marks active staff with no attendance row for
+                          yesterday as 'absent' (skips holidays) — see "Attendance" below
+  config.php            DB credentials + CRON_SECRET (placeholders in git)
   .gitignore
   index.php              Redirects to /admin/login.php
   create-admin.php       One-time script to create the first admin
@@ -134,11 +145,12 @@ database by hand in phpMyAdmin.
 | Table | Purpose |
 |---|---|
 | `admins` | Admin/manager login accounts. `role` is `admin` or `manager`. Password stored as `password_hash()`. |
-| `settings` | Key/value app config (`setting_key` PK, `setting_value`). Seeded with `company_name`, `default_work_start_time`, `default_work_end_time`, `timezone`. |
+| `settings` | Key/value app config (`setting_key` PK, `setting_value`). Seeded with `company_name`, `default_work_start_time`, `default_work_end_time`, `timezone`, `attendance_grace_minutes`. |
 | `office_locations` | Named office branches with an `ip_address`, for future WiFi-based attendance check-in. `is_active` flag. |
 | `holidays` | Company holiday dates. `applies_to` is `all` or `specific`. A `holiday_staff` join table is stubbed (commented out) in `004_holidays.sql` for targeting specific staff once the staff table exists — **not built yet**. |
 | `staff` | Employee records + their own login credentials. `work_mode` is `office`/`wfh`/`hybrid`. `status` is `active`/`inactive` (`inactive` = soft delete — the record is kept, and inactive staff cannot log in). `created_by` references the admin who created the record. |
 | `staff_work_time_history` | Append-only log of every work-timing change for a staff member — see "Work timing history convention" below. `set_by` references the admin who recorded the change. |
+| `attendance` | One row per staff member per day (unique on `staff_id` + `attendance_date`). `work_location` records how the check-in was verified; `status` is always computed by the app, never entered directly by staff — see "Attendance" below. |
 
 ## Work timing history convention (important)
 
@@ -166,6 +178,67 @@ says now".
   used by both `admin/staff/view.php` and `staff/dashboard.php`. Reuse
   this helper rather than re-implementing the "latest effective_from"
   query elsewhere.
+
+## Attendance
+
+One `attendance` row per staff member per day (`staff/attendance.php` for
+check-in/out, `admin/attendance/*` for the monitor). All logic lives in
+`includes/functions.php`: `getClientIp()`, `isOfficeIp()`,
+`getAttendanceGraceMinutes()`, `getHolidayName()`, `computeCheckInStatus()`,
+`isHalfDay()`.
+
+- **Holiday skip:** if `getHolidayName($date)` returns non-null,
+  `staff/attendance.php` shows "Holiday today" instead of check-in/out
+  buttons, and the daily cron skips the date entirely — no attendance rows
+  are created for a holiday at all (not even 'absent'). `applies_to =
+  'specific'` is currently treated the same as `'all'` — per-staff holiday
+  targeting via the (still unbuilt) `holiday_staff` table is deferred to
+  Prompt 4, so **any** holiday row blocks attendance company-wide for now.
+- **Check-in / `work_location`:** compares `getClientIp()` against active
+  `office_locations.ip_address` rows (exact match, no CIDR support).
+  - Match → `office_verified`.
+  - No match, `staff.work_mode = 'wfh'` → `wfh` (no warning).
+  - No match, `staff.work_mode` is `'office'` or `'hybrid'` → `unverified`,
+    with an on-page warning that the check-in is flagged for admin review
+    — but it still saves; nothing blocks it.
+  - `office_manual` is only ever set by an admin's manual override
+    (`admin/attendance/edit.php`), never by the staff-side check-in flow.
+  - WFH-request-driven attendance (auto-treating a hybrid/office staff
+    member's approved WFH request day as legitimate `wfh` instead of
+    `unverified`) is **deferred to Prompt 4** — right now `work_location`
+    only reflects what was entered/detected at check-in time.
+- **`status` computation (never user-entered):**
+  - At check-in: `computeCheckInStatus()` compares the check-in time
+    against `getCurrentWorkTiming()`'s `start` plus
+    `getAttendanceGraceMinutes()` (`settings.attendance_grace_minutes`,
+    seeded to 15) → `'present'` if within the grace window, else `'late'`.
+  - At check-out: if `isHalfDay()` finds the worked duration
+    (`check_out - check_in`) is under **half** the scheduled shift length
+    (`getCurrentWorkTiming()`'s `end - start`), status is overridden to
+    `'half_day'` regardless of whether it was `'present'` or `'late'` at
+    check-in. Otherwise the check-in status is left as-is.
+  - `'absent'` is only ever set by `cron/mark-absent.php` (no check-in
+    at all) or by an admin's manual override — never by the check-in/out
+    flow itself.
+- **One row per staff per day** is enforced by the DB unique key on
+  (`staff_id`, `attendance_date`), not just app logic.
+- **Manual overrides** (`admin/attendance/edit.php`) use
+  `INSERT ... ON DUPLICATE KEY UPDATE` keyed on that same unique
+  constraint, so the same form both adds a missing day and edits an
+  existing one. `check_in_ip`/`check_out_ip` are only ever set by the
+  real check-in/out flow — a manual edit never touches them (they're
+  excluded from the `ON DUPLICATE KEY UPDATE` clause), so a genuine
+  IP is never overwritten by a later correction. Every save appends
+  `[Manually edited by {admin name} on {timestamp}]` plus any optional
+  reason to `notes` — prior notes are kept, never overwritten.
+- **`cron/mark-absent.php`** runs once daily (see README for cPanel
+  scheduling) and, for **yesterday's** date only, inserts an `'absent'`
+  row (`work_location = 'unverified'`) for every active staff member with
+  no attendance row for that date — skipped entirely if yesterday was a
+  holiday. Idempotent: safe to re-run, existing rows are left untouched.
+  Runs via CLI with no auth; if triggered over HTTP instead (e.g. a
+  cPanel "URL" cron job) it requires `?key=` to match `CRON_SECRET` in
+  `config.php` (a placeholder in git — change it on the real server).
 
 ## Auth approach
 
@@ -214,7 +287,7 @@ says now".
 - Passwords are hashed with `password_hash()` / verified with
   `password_verify()`. Never store or log plaintext passwords.
 
-## What's built so far (Prompts 1-2/5)
+## What's built so far (Prompts 1-3/5)
 
 **Prompt 1 — Foundation:**
 - Folder skeleton described above.
@@ -243,14 +316,41 @@ says now".
   staff login, work-timing resolution for past/current/future
   `effective_from` dates and explicit revert-to-default, staff login,
   password change, and simultaneous admin+staff sessions in one browser.
+- Also added since Prompt 2 shipped: a key-gated **Admin Account** section
+  on `sql/index.php` (create the first admin, or reset an existing admin's
+  password) — see "How `sql/index.php` works" above.
 
-Attendance, leave/WFH, and payout are **not built yet** (Prompts 3-5).
+**Prompt 3 — Attendance:**
+- `attendance` table + seeded `attendance_grace_minutes` setting.
+- Staff-side check-in/check-out (`/staff/attendance.php`) with office-WiFi
+  IP verification, WFH fallback, unverified-location warning, holiday
+  skip, and computed `present`/`late`/`half_day` status — see
+  "Attendance" above for the exact rules.
+- Admin attendance monitor (`/admin/attendance/`): today/date view with
+  department/work_mode filters and late/unverified row highlighting,
+  per-staff history, and a manual add/edit tool that logs who changed
+  what and when. Linked from `admin/staff/view.php`.
+- `cron/mark-absent.php` — daily absent-marker for the previous day,
+  holiday-aware, idempotent, runnable via CLI or a keyed HTTP request.
+- Verified end-to-end against a live MariaDB instance: schema auto-create,
+  IP-match / WFH / unverified check-in paths, on-time vs. late grace-period
+  boundaries, half-day detection on early checkout, duplicate check-in/out
+  rejection, the DB-level unique constraint, holiday skip (including for a
+  staff member who already checked in before the holiday was added),
+  admin monitor filters and row highlighting, manual add/edit (including
+  upsert-not-duplicate and notes accumulation), and the cron script's
+  idempotency, holiday skip, and HTTP key gate (wrong key rejected).
+
+WFH-request-driven attendance (auto-treating an approved WFH request day
+as verified `wfh` for hybrid/office staff, instead of `unverified`) is
+**deferred to Prompt 4**, once WFH requests exist. Leave/WFH requests and
+payout are **not built yet** (Prompts 4-5).
 
 ## What's planned (not yet built)
 
-- **Prompt 3:** Attendance / WiFi-based check-in (using `office_locations`).
 - **Prompt 4:** Leave & WFH requests (will likely use/extend `holidays` +
-  the commented-out `holiday_staff` stub).
+  the commented-out `holiday_staff` stub, and wire WFH-request-driven
+  attendance per the note above).
 - **Prompt 5:** Payout & reports.
 
 Do not build any of the above ahead of schedule.

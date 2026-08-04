@@ -284,6 +284,19 @@ pre.sql-source {
 
 .table-actions { display: flex; gap: 10px; white-space: nowrap; }
 
+/* Attendance statuses / work locations */
+.badge-present { background: #dcfce7; color: var(--color-success); }
+.badge-late { background: #fef3c7; color: #b45309; }
+.badge-half_day { background: #ffedd5; color: #c2410c; }
+.badge-absent { background: #fee2e2; color: var(--color-danger); }
+
+.badge-office_verified { background: #dcfce7; color: var(--color-success); }
+.badge-office_manual { background: #dbeafe; color: var(--color-primary-dark); }
+.badge-wfh { background: #ede9fe; color: #6d28d9; }
+.badge-unverified { background: #fee2e2; color: var(--color-danger); }
+
+tr.row-flag { background: #fffbeb; }
+
 @media (max-width: 600px) {
   .topbar { flex-direction: column; align-items: flex-start; }
 }

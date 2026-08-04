@@ -16,5 +16,10 @@ define('DB_PASS', 'your_database_password');
 define('APP_NAME', 'Digital Ali Pro OMS');
 define('APP_URL', 'https://www.digitalalipro.in/office');
 
+// Required as ?key=... when cron/mark-absent.php is triggered over HTTP
+// (e.g. a cPanel "URL" cron job) instead of run directly via CLI/SSH cron.
+// Change this placeholder on the real server.
+define('CRON_SECRET', 'change-this-cron-secret');
+
 // PHP session/error settings suitable for shared hosting
 date_default_timezone_set('Asia/Kolkata');

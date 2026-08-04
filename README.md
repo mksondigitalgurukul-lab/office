@@ -5,10 +5,11 @@ payout) for one company, built as plain PHP + MySQL for cPanel shared
 hosting. Deployed at
 [www.digitalalipro.in/office](https://www.digitalalipro.in/office).
 
-> This is Prompt 2 of a multi-prompt build: project skeleton, database
-> schema runner, admin login, and now staff management + staff login with
-> work-time overrides. Attendance, leave, and payout are not built yet —
-> see `CLAUDE.md` for the full roadmap.
+> This is Prompt 3 of a multi-prompt build: project skeleton, database
+> schema runner, admin login, staff management + staff login with
+> work-time overrides, and now daily attendance check-in/check-out with
+> office-WiFi verification. Leave/WFH requests and payout are not built
+> yet — see `CLAUDE.md` for the full roadmap.
 
 ## Requirements
 
@@ -32,12 +33,15 @@ hosting. Deployed at
    define('DB_USER', 'your_database_user');
    define('DB_PASS', 'your_database_password');
    ```
+   Also change `CRON_SECRET` from its placeholder — it's needed if you set
+   up the attendance cron job via an HTTP URL (see step 10 below).
    Do not commit your real credentials back into git.
 4. **Create the schema.** Visit `https://www.digitalalipro.in/office/sql/index.php`
    in a browser. On a brand-new install (no admin account yet) this page is
    open in **setup mode** — it will automatically create the `admins`,
-   `settings`, `office_locations`, `holidays`, `staff`, and
-   `staff_work_time_history` tables and show you their structure.
+   `settings`, `office_locations`, `holidays`, `staff`,
+   `staff_work_time_history`, and `attendance` tables and show you their
+   structure.
 5. **Create the first admin.** Two options — either works:
    - **Via DB Tools:** on `https://www.digitalalipro.in/office/sql/index.php`
      (still in setup mode), scroll to **Admin Account** and fill in the
@@ -73,6 +77,34 @@ hosting. Deployed at
    pick the admin, set a new password, and enter the management key from
    step 5. If you've lost that key, edit `sql/key.txt` directly on the
    server (via cPanel File Manager or SSH) to set a new one.
+10. **Register office WiFi IPs.** There's no admin page for
+    `office_locations` yet (not built in any prompt so far), so add rows
+    via **DB Tools** → **Ad-hoc SQL**, e.g.:
+    ```sql
+    INSERT INTO office_locations (location_name, ip_address, is_active)
+    VALUES ('Main Office', '203.0.113.10', 1);
+    ```
+    Use the public IP your office WiFi shows to the internet (check
+    `https://whatismyip.com` from an office machine) — this is what
+    `staff/attendance.php` compares check-ins against to set
+    `work_location = 'office_verified'`.
+11. **Schedule the daily absent-marker.** `cron/mark-absent.php` marks
+    active staff with no attendance row for *yesterday* as `'absent'`
+    (skipping holidays) — see `CLAUDE.md` → "Attendance" for the exact
+    rules. In cPanel → **Cron Jobs**, add one that runs shortly after
+    midnight (e.g. `5 0 * * *` for 12:05 AM daily). Two ways to run it:
+    - **Preferred — run the PHP file directly:**
+      ```bash
+      php /home/YOUR_CPANEL_USER/public_html/office/cron/mark-absent.php
+      ```
+    - **Fallback — if your cron only supports hitting a URL:**
+      ```bash
+      wget -q -O /dev/null "https://www.digitalalipro.in/office/cron/mark-absent.php?key=YOUR_CRON_SECRET"
+      ```
+      `YOUR_CRON_SECRET` must match `CRON_SECRET` in `config.php` (step 3)
+      — without a matching key, an HTTP request to this script is
+      rejected with 403. Running it via CLI/SSH cron never needs the key.
+      The script is idempotent, so an accidental double-run is harmless.
 
 ## Local development
 
@@ -87,28 +119,36 @@ hosting. Deployed at
 4. Log in at `http://localhost:8000/admin/login.php`, add a staff member
    under **Staff**, then log in as them at
    `http://localhost:8000/staff/login.php`.
+5. To test office-WiFi verification locally, add your machine's IP as an
+   `office_locations` row via DB Tools → Ad-hoc SQL (when using PHP's
+   built-in server from `localhost`, that's usually `127.0.0.1`).
+6. Run `php cron/mark-absent.php` directly from the project root to test
+   the absent-marker without waiting for a real cron job.
 
 ## Folder overview
 
 ```
 /office
   /admin           Admin panel pages (login, logout, dashboard, staff
-                    management — and, in later prompts, attendance/leave/
-                    payout/reports)
+                    management, attendance monitor — and, in later
+                    prompts, leave/payout/reports)
     /staff          Staff CRUD + work-timing override tool
-  /staff            Staff-facing pages: login, logout, dashboard
+    /attendance      Today/date monitor, per-staff history, manual override
+  /staff            Staff-facing pages: login, logout, dashboard, attendance
                     (their own session, separate from /admin)
   /assets/css      Shared stylesheet
   /assets/js       Shared JS (small UI behaviors)
   /includes        db.php (PDO connection), auth.php (admin session
                    helpers), staff_auth.php (staff session helpers),
-                   functions.php (escaping + settings + work-timing helpers)
+                   functions.php (escaping + settings + work-timing +
+                   attendance helpers)
   /sql             Numbered schema files (001_admins.sql, ...) + index.php
                    (the schema runner / DB dashboard / ad-hoc SQL tool /
                    Admin Account section — see CLAUDE.md for how it works),
                    plus .htaccess and a gitignored key.txt (admin
                    management key, created on first use)
-  config.php       DB credentials (edit this on the server)
+  /cron            mark-absent.php — daily absent-marker, see step 11 above
+  config.php       DB credentials + CRON_SECRET (edit this on the server)
   index.php        Redirects to /admin/login.php
   create-admin.php One-time first-admin creation script
   CLAUDE.md        Detailed technical/architecture notes for this project
@@ -118,16 +158,31 @@ hosting. Deployed at
 ## Schema changes going forward
 
 **Do not edit the database by hand in phpMyAdmin.** Add a new numbered
-`.sql` file to `/sql` (e.g. `007_description.sql`), then visit
+`.sql` file to `/sql` (e.g. `008_description.sql`), then visit
 `/sql/index.php` while logged in — it detects and runs new files
 automatically, and lets you re-run or apply ad-hoc `ALTER` statements
 safely. See `CLAUDE.md` for the full convention.
 
+## Settings keys
+
+Editable today only via DB Tools → Ad-hoc SQL (`UPDATE settings SET
+setting_value = ... WHERE setting_key = ...`) — no settings admin page
+exists yet:
+
+| Key | Meaning | Default |
+|---|---|---|
+| `company_name` | Displayed app name | `Digital Ali Pro OMS` |
+| `default_work_start_time` / `default_work_end_time` | Universal work hours, used when a staff member has no timing override | `09:30` / `18:30` |
+| `timezone` | Informational | `Asia/Kolkata` |
+| `attendance_grace_minutes` | Minutes after `default_work_start_time` (or a staff member's override start time) before a check-in counts as `'late'` | `15` |
+
 ## Roadmap
 
 - **Prompt 1:** Foundation — skeleton, schema runner, admin login. ✅
-- **Prompt 2 (this build):** Staff management, staff login, work-time
-  overrides with history. ✅
-- **Prompt 3:** Attendance / WiFi-based check-in.
+- **Prompt 2:** Staff management, staff login, work-time overrides with
+  history. ✅
+- **Prompt 3 (this build):** Daily attendance check-in/check-out with
+  office-WiFi verification, admin attendance monitor, absent-marking
+  cron. ✅
 - **Prompt 4:** Leave & WFH requests.
 - **Prompt 5:** Payout & reports.

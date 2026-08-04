@@ -310,7 +310,7 @@ if (is_file($logFile)) {
 <nav class="nav">
   <a href="../admin/dashboard.php">Dashboard</a>
   <a href="../admin/staff/index.php">Staff</a>
-  <a href="../admin/attendance.php">Attendance</a>
+  <a href="../admin/attendance/index.php">Attendance</a>
   <a href="../admin/leave.php">Leave</a>
   <a href="../admin/payout.php">Payout</a>
   <a href="../admin/reports.php">Reports</a>

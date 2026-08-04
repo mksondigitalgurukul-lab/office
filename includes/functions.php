@@ -67,3 +67,60 @@ function getCurrentWorkTiming(int $staffId, ?string $onDate = null): array
         'effective_from' => $row['effective_from'] ?? null,
     ];
 }
+
+/** The requesting client's IP address, used for office-WiFi verification. */
+function getClientIp(): string
+{
+    return $_SERVER['REMOTE_ADDR'] ?? '';
+}
+
+/** Whether an IP matches one of the active office_locations rows. */
+function isOfficeIp(string $ip): bool
+{
+    if ($ip === '') {
+        return false;
+    }
+
+    $stmt = getDB()->prepare('SELECT COUNT(*) FROM office_locations WHERE is_active = 1 AND ip_address = ?');
+    $stmt->execute([$ip]);
+    return (int) $stmt->fetchColumn() > 0;
+}
+
+/** Grace period (minutes) before a check-in counts as late. */
+function getAttendanceGraceMinutes(): int
+{
+    return (int) getSetting('attendance_grace_minutes', '15');
+}
+
+/**
+ * The holiday name for a date, or null if it isn't a holiday.
+ * applies_to = 'specific' is treated the same as 'all' for now — targeting
+ * specific staff via holiday_staff is deferred to Prompt 4, so any holiday
+ * row currently blocks attendance company-wide on that date.
+ */
+function getHolidayName(string $date): ?string
+{
+    $stmt = getDB()->prepare('SELECT name FROM holidays WHERE holiday_date = ? LIMIT 1');
+    $stmt->execute([$date]);
+    $name = $stmt->fetchColumn();
+    return $name !== false ? $name : null;
+}
+
+/** 'present' if $checkInTime is within $graceMinutes of $scheduledStart, else 'late'. */
+function computeCheckInStatus(string $scheduledStart, string $checkInTime, int $graceMinutes): string
+{
+    $deadline = date('H:i:s', strtotime($scheduledStart) + $graceMinutes * 60);
+    return $checkInTime <= $deadline ? 'present' : 'late';
+}
+
+/** Whether the worked duration is under half the scheduled shift length. */
+function isHalfDay(string $scheduledStart, string $scheduledEnd, string $checkInTime, string $checkOutTime): bool
+{
+    $scheduledSeconds = strtotime($scheduledEnd) - strtotime($scheduledStart);
+    if ($scheduledSeconds <= 0) {
+        return false;
+    }
+
+    $workedSeconds = strtotime($checkOutTime) - strtotime($checkInTime);
+    return $workedSeconds < ($scheduledSeconds / 2);
+}

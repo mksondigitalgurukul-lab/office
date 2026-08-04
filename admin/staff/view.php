@@ -50,7 +50,7 @@ unset($_SESSION['flash']);
 <nav class="nav">
   <a href="../dashboard.php">Dashboard</a>
   <a href="index.php"><strong>Staff</strong></a>
-  <a href="../attendance.php">Attendance</a>
+  <a href="../attendance/index.php">Attendance</a>
   <a href="../leave.php">Leave</a>
   <a href="../payout.php">Payout</a>
   <a href="../reports.php">Reports</a>
@@ -62,6 +62,7 @@ unset($_SESSION['flash']);
   <div class="toolbar">
     <h1 style="margin:0;"><?= h($staff['full_name']) ?></h1>
     <div class="table-actions">
+      <a href="../attendance/staff.php?id=<?= (int) $id ?>" class="btn btn-sm btn-secondary">Attendance History</a>
       <a href="edit.php?id=<?= (int) $id ?>" class="btn btn-sm btn-secondary">Edit</a>
       <a href="index.php" class="btn btn-sm btn-secondary">Back to list</a>
     </div>

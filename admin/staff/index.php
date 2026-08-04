@@ -66,7 +66,7 @@ unset($_SESSION['flash']);
 <nav class="nav">
   <a href="../dashboard.php">Dashboard</a>
   <a href="index.php"><strong>Staff</strong></a>
-  <a href="../attendance.php">Attendance</a>
+  <a href="../attendance/index.php">Attendance</a>
   <a href="../leave.php">Leave</a>
   <a href="../payout.php">Payout</a>
   <a href="../reports.php">Reports</a>
