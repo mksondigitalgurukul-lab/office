@@ -28,6 +28,7 @@ $navItems = [
     ],
     'Admin' => [
         ['key' => 'leave-types', 'label' => 'Leave Types', 'href' => $basePath . 'leave-types/index.php'],
+        ['key' => 'holidays', 'label' => 'Holidays', 'href' => $basePath . 'holidays/index.php'],
         ['key' => 'office-locations', 'label' => 'Office Locations', 'href' => $basePath . 'office-locations/index.php'],
         ['key' => 'settings', 'label' => 'Settings', 'href' => $basePath . 'settings.php'],
         ['key' => 'db-tools', 'label' => 'DB Tools', 'href' => $assetPath . 'sql/index.php'],

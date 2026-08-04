@@ -42,7 +42,7 @@ hosting. Deployed at
    define('DB_PASS', 'your_database_password');
    ```
    Also change `CRON_SECRET` from its placeholder — it's needed if you set
-   up the attendance cron job via an HTTP URL (see step 10 below). Never
+   up the attendance cron job via an HTTP URL (see step 12 below). Never
    commit `config.php` itself back into git.
 4. **Create the schema.** Visit `https://www.digitalalipro.in/office/sql/index.php`
    in a browser. On a brand-new install (no admin account yet) this page is
@@ -55,8 +55,8 @@ hosting. Deployed at
    and `014_leave_types_add_is_active.sql` are both `ALTER TABLE`s (no
    `CREATE TABLE`), so neither auto-runs — find each in the list and click
    its **Re-run** button once. Without the first, `cron/mark-absent.php`
-   can't record the `'on_leave'` attendance status (see step 11 below);
-   without the second, leave-types management (step 12) won't work.
+   can't record the `'on_leave'` attendance status (see step 12 below);
+   without the second, leave-types management (step 13) won't work.
 5. **Create the first admin.** Two options — either works:
    - **Via DB Tools:** on `https://www.digitalalipro.in/office/sql/index.php`
      (still in setup mode), scroll to **Admin Account** and fill in the
@@ -98,7 +98,19 @@ hosting. Deployed at
     from an office machine) — this is what `staff/attendance.php`
     compares check-ins against to set `work_location = 'office_verified'`.
     Deactivate (don't delete) a location if it's no longer valid.
-11. **Schedule the daily absent-marker.** `cron/mark-absent.php` marks
+11. **Set up your holiday calendar.** Go to **Holidays** → add company
+    holidays one at a time (date + name), and use **Generate Sundays**
+    (enter how many months ahead — 12 covers a full year) to bulk-add
+    every upcoming Sunday as a default day off, instead of adding 52 rows
+    by hand. Any holiday fully blocks staff check-in for that day —
+    *except* Sundays specifically, which show an optional "Check In
+    (Extra Work)" button so someone can still log a normal attendance row
+    if they choose to work that day (it doesn't automatically add
+    anything to their payout — see `CLAUDE.md` → "Holidays" if you want
+    to pay extra for it, that's a manual bonus). Do this before step 12
+    below, since the absent-marker cron treats every holiday date the
+    same way.
+12. **Schedule the daily absent-marker.** `cron/mark-absent.php` marks
     active staff with no attendance row for *yesterday* as `'absent'`
     (skipping holidays, and now aware of approved leave/WFH — see
     `CLAUDE.md` → "Attendance" and "Leave & WFH requests" for the exact
@@ -118,18 +130,18 @@ hosting. Deployed at
       — without a matching key, an HTTP request to this script is
       rejected with 403. Running it via CLI/SSH cron never needs the key.
       The script is idempotent, so an accidental double-run is harmless.
-12. **Review leave types (optional).** Sick/Casual/Paid/Unpaid are seeded
+13. **Review leave types (optional).** Sick/Casual/Paid/Unpaid are seeded
     automatically. Go to **Leave Types** to add more, rename one, toggle
     whether it's paid, or deactivate one you don't use — deactivating
     hides it from the staff request form without touching past requests.
-13. **Set staff salaries — required before generating any payout.** On
+14. **Set staff salaries — required before generating any payout.** On
     each staff member's profile (**Staff** → pick a staff member), scroll
     to **Salary** → **Set / Change Salary**, enter their monthly salary
     and an effective-from date. Like work timing, this is append-only —
     changing it later adds a new row, it never edits history. A staff
     member with no salary set is silently skipped when you generate a
     payout for them (and told so in the result message).
-14. **Generate a monthly payout.** Go to **Payout** → **Generate Payout**,
+15. **Generate a monthly payout.** Go to **Payout** → **Generate Payout**,
     pick a month and either all active staff or one, and submit. This
     creates/updates **draft** payouts using that month's attendance and
     approved-leave data — see `CLAUDE.md` → "Payout" for the exact
@@ -142,7 +154,7 @@ hosting. Deployed at
     payout stamps `paid_at`. Each payout's detail page is also a
     print-friendly payslip — use the **Print / Save as PDF** button (a
     real PDF export wasn't built; the browser's print-to-PDF covers it).
-15. **Run attendance reports.** Go to **Reports**, pick a staff member
+16. **Run attendance reports.** Go to **Reports**, pick a staff member
     (or "All active staff") and a range (last 7 days / this month / this
     year / a custom from-to), then **Export CSV** if you want the same
     table as a file. Picking one staff member also shows their
@@ -179,13 +191,14 @@ hosting. Deployed at
 /office
   /admin           Admin panel pages (login, logout, dashboard, staff
                     management, attendance monitor, leave/WFH review,
-                    leave-types CRUD, office-location CRUD, payout, reports,
-                    settings)
+                    leave-types CRUD, holidays CRUD, office-location CRUD,
+                    payout, reports, settings)
     /staff          Staff CRUD + work-timing override tool + salary tool
     /attendance      Today/date monitor, per-staff history, manual override
     /leave           Leave request list/filter + approve/reject
     /wfh             WFH request list/filter + approve/reject + direct assignment
     /leave-types     leave_types CRUD (add/rename/paid toggle/active toggle)
+    /holidays        holidays CRUD (add/delete one) + bulk "Generate Sundays"
     /office-locations  Office WiFi IP CRUD (add/edit/active toggle)
     /payout          Generate/list/view payouts — draft/finalize/paid, printable payslip
     /reports         attendance.php — flexible attendance summary + CSV export
@@ -210,7 +223,7 @@ hosting. Deployed at
                    Admin Account section — see CLAUDE.md for how it works),
                    plus .htaccess and a gitignored key.txt (admin
                    management key, created on first use)
-  /cron            mark-absent.php — daily absent-marker, see step 11 above
+  /cron            mark-absent.php — daily absent-marker, see step 12 above
   config-example.php  Tracked config template — copy to config.php and edit
   config.php       DB credentials + CRON_SECRET (gitignored — never committed)
   index.php        Redirects to /admin/login.php
@@ -241,11 +254,23 @@ SQL still works too, for anything not covered by that form.)
 | `timezone` | Informational | `Asia/Kolkata` |
 | `attendance_grace_minutes` | Minutes after `default_work_start_time` (or a staff member's override start time) before a check-in counts as `'late'` | `15` |
 
+## Holidays
+
+Managed via **Holidays** in the admin nav — add a one-off holiday
+(date + name), delete one, or bulk-add every upcoming Sunday with
+**Generate Sundays** (pick how many months ahead; re-running it is safe,
+it never overwrites an existing holiday on a date that already has one).
+Any holiday blocks staff check-in for that day, *except* Sundays — those
+show an extra "Check In (Extra Work)" option so someone can still log
+attendance if they choose to work, without affecting payout automatically
+(add a manual bonus on that payout if you want to pay for it). See
+`CLAUDE.md` → "Holidays" for the full rule.
+
 ## Leave types
 
 Seeded with Sick, Casual, Paid (all `is_paid = 1`), and Unpaid
 (`is_paid = 0`). Managed via **Leave Types** in the admin nav (add,
-inline rename, toggle paid/unpaid, deactivate) — see step 12 above.
+inline rename, toggle paid/unpaid, deactivate) — see step 13 above.
 `is_paid` matters beyond labeling: it's what `admin/payout/generate.php`
 uses to decide whether an approved leave request reduces a payout.
 

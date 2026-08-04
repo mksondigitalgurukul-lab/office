@@ -45,6 +45,9 @@ at the bottom for where to pick up next.
                       form to directly assign+auto-approve a WFH day for any staff member
     /leave-types        CRUD for leave_types (login-protected, admin session)
       index.php       List with inline rename, is_paid toggle, active/inactive toggle, add form
+    /holidays           CRUD for company holidays (login-protected, admin session)
+      index.php       List (upcoming/all), add one, delete one, bulk "Generate Sundays"
+                      — see "Holidays" below
     /office-locations   CRUD for office WiFi IPs (login-protected, admin session)
       index.php       List + active/inactive toggle
       add.php         Create a location
@@ -206,7 +209,7 @@ database by hand in phpMyAdmin.
 | `admins` | Admin/manager login accounts. `role` is `admin` or `manager`. Password stored as `password_hash()`. |
 | `settings` | Key/value app config (`setting_key` PK, `setting_value`). Seeded with `company_name`, `default_work_start_time`, `default_work_end_time`, `timezone`, `attendance_grace_minutes`. |
 | `office_locations` | Named office branches with an `ip_address`, for future WiFi-based attendance check-in. `is_active` flag. |
-| `holidays` | Company holiday dates. `applies_to` is `all` or `specific`. A `holiday_staff` join table is stubbed (commented out) in `004_holidays.sql` for targeting specific staff once the staff table exists — **not built yet**. |
+| `holidays` | Company holiday dates. `applies_to` is `all` or `specific` (only `'all'` is functional — see below). Managed at `admin/holidays/index.php` — add one-off holidays, or bulk-generate the next year's Sundays. A `holiday_staff` join table is stubbed (commented out) in `004_holidays.sql` for targeting specific staff once the staff table exists — **not built yet**. |
 | `staff` | Employee records + their own login credentials. `work_mode` is `office`/`wfh`/`hybrid`. `status` is `active`/`inactive` (`inactive` = soft delete — the record is kept, and inactive staff cannot log in). `created_by` references the admin who created the record. |
 | `staff_work_time_history` | Append-only log of every work-timing change for a staff member — see "Work timing history convention" below. `set_by` references the admin who recorded the change. |
 | `attendance` | One row per staff member per day (unique on `staff_id` + `attendance_date`). `work_location` records how the check-in was verified; `status` is always computed by the app, never entered directly by staff — see "Attendance" below. |
@@ -257,7 +260,9 @@ check-in/out, `admin/attendance/*` for the monitor). All logic lives in
   are created for a holiday at all (not even 'absent'). `applies_to =
   'specific'` is currently treated the same as `'all'` — per-staff holiday
   targeting via the (still unbuilt) `holiday_staff` table is deferred to
-  Prompt 4, so **any** holiday row blocks attendance company-wide for now.
+  a future prompt, so **any** holiday row blocks attendance company-wide
+  for now. **Sunday is the one exception to the block** — see "Holidays"
+  below.
 - **Check-in / `work_location`:** compares `getClientIp()` against active
   `office_locations.ip_address` rows (exact match, no CIDR support).
   - Match → `office_verified`.
@@ -312,6 +317,64 @@ check-in/out, `admin/attendance/*` for the monitor). All logic lives in
   cron job) it requires `?key=` to match `CRON_SECRET` in `config.php`
   (placeholder in `config-example.php` — change it on the real server's
   `config.php`).
+
+## Holidays
+
+Managed entirely at `admin/holidays/index.php` (nav: **Admin → Holidays**)
+— list (upcoming by default, `?all=1` to include past dates), add one,
+delete one, and a bulk **"Generate Sundays"** action. There is no
+`holidays` CRUD elsewhere; every holiday-aware code path (`getHolidayName()`,
+the staff dashboard's "Upcoming" list, `cron/mark-absent.php`) just reads
+whatever rows exist in the table, regardless of how they got there.
+
+- **Adding one-off holidays:** a plain date + name form, always inserts
+  with `applies_to = 'all'` (`'specific'` isn't exposed in the UI — see
+  the "Holiday skip" note above on why it's not functional yet).
+- **Bulk-generating Sundays:** enter how many months ahead (default 12,
+  i.e. "the next year"), and it walks every Sunday from today through
+  that horizon, inserting a `holidays` row named `'Sunday'` for each date
+  that doesn't already have a holiday. It **never overwrites** an
+  existing row — if a named company holiday happens to fall on a Sunday,
+  that name is left alone rather than being replaced with `'Sunday'`.
+  Safe to re-run (e.g. to extend the horizon later); already-covered
+  dates are simply skipped. There's no unique constraint on
+  `holidays.holiday_date` at the DB level, so this existence check is
+  what actually prevents duplicates — don't add holidays through any
+  other path that skips it.
+- **Sunday is a deliberate exception to "any holiday blocks check-in":**
+  every other holiday fully blocks `staff/attendance.php` (see "Holiday
+  skip" above) — no check-in/out buttons at all. But for a date that is
+  *both* a holiday row *and* a calendar Sunday (`date('N', ...) === 7`,
+  checked in code, not by the holiday's `name` — so a manually-renamed
+  Sunday holiday still gets this treatment, and conversely a non-Sunday
+  holiday never does), `staff/attendance.php` additionally shows a
+  "Check In (Extra Work)" button. Checking in on one of these days runs
+  through the **exact same** check-in/check-out logic as a normal day
+  (`computeCheckInStatus()`, `isHalfDay()`, IP verification — nothing
+  special about the resulting `attendance` row's `status`/`work_location`)
+  except the row's `notes` are stamped `"Extra work — checked in on a
+  Sunday (<holiday name>)."` so it's identifiable later in the admin
+  attendance monitor and reports.
+  - **This does not change payout math at all** — it was a deliberate
+    scope decision (see CLAUDE.md's own "judgment call" convention
+    elsewhere in this file): the resulting row simply counts toward
+    `present_days`/`late_days`/etc. like any other day, which
+    `computePayoutFigures()` already doesn't use to *add* anything to
+    `net_payout` (only `absent`/unpaid-leave/half-day *reduce* it — see
+    "Payout" above). If a worked Sunday should be paid extra, that's a
+    manual **bonus** on that staff member's payout, same as any other
+    ad-hoc adjustment.
+  - `cron/mark-absent.php` is unaffected by any of this — a Sunday with a
+    `holidays` row is still a holiday to the cron, so it's skipped
+    entirely for anyone who *didn't* voluntarily check in (never marked
+    `'absent'`), exactly like any other holiday.
+- **Staff dashboard "Upcoming" list** (`staff/dashboard.php`) explicitly
+  excludes Sundays from its holidays query (`DAYOFWEEK(holiday_date) <>
+  1`) — once a year of Sundays exists, showing them all would crowd out
+  real named holidays and the staff member's own leave/WFH out past a
+  few weeks. Weekly Sundays are still fully visible on
+  `admin/holidays/index.php`; they're just not "upcoming news" for a
+  staff member the way a one-off holiday or their own approved leave is.
 
 ## Leave & WFH requests
 
@@ -522,8 +585,8 @@ only the current page title (no duplicate nav).
 
 - **Admin sidebar** groups nav links into four labeled sections:
   **Overview** (Dashboard), **People** (Staff, Attendance, Leave, WFH),
-  **Money** (Payout, Reports), **Admin** (Leave Types, Office Locations,
-  Settings, DB Tools).
+  **Money** (Payout, Reports), **Admin** (Leave Types, Holidays, Office
+  Locations, Settings, DB Tools).
 - **Staff sidebar** is a flat list: Dashboard, Attendance, Leave, WFH,
   Payout, Profile.
 - The active page's nav link gets the `.nav-link.active` class (solid
@@ -581,7 +644,8 @@ several stale/inconsistent nav links before Prompt 6), every page
   - `$activeNav` — one of the nav-item keys defined inside
     `admin-header.php`'s `$navItems` array (`dashboard`, `staff`,
     `attendance`, `leave`, `wfh`, `payout`, `reports`, `leave-types`,
-    `office-locations`, `settings`, `db-tools`) — highlights that link.
+    `holidays`, `office-locations`, `settings`, `db-tools`) — highlights
+    that link.
   - `$basePath` — the relative path *back to* `/admin/` from the current
     file: `''` for a page directly in `/admin/` (e.g. `dashboard.php`),
     `'../'` for a page one level deeper (e.g. `staff/index.php`). The
@@ -868,6 +932,32 @@ several stale/inconsistent nav links before Prompt 6), every page
   screenshots confirmed the sidebar, drawer, stat cards, badges, and
   payslip all render correctly and stay legible in both light and dark
   mode, at both desktop and mobile widths.
+
+**Also added since Prompt 6 shipped:**
+- `admin/holidays/index.php` — the `holidays` table existed since Prompt 1
+  but had no admin UI at all until now; every holiday was previously added
+  by hand via DB Tools ad-hoc SQL. Now: list (upcoming/all), add one,
+  delete one, and bulk **"Generate Sundays"** (walks the next N months
+  from today, inserting a `'Sunday'` holiday row for every Sunday that
+  doesn't already have one — never overwrites an existing holiday). See
+  "Holidays" above for the full write-up.
+- **Sunday extra-work check-in:** `staff/attendance.php` now treats a
+  holiday that falls on a Sunday as an exception to the usual "holiday
+  blocks check-in" rule — a "Check In (Extra Work)" button lets a staff
+  member log a normal attendance row anyway. Every other holiday still
+  fully blocks check-in, unchanged. See "Holidays" above for the exact
+  rule and the payout-neutrality judgment call.
+- `staff/dashboard.php`'s "Upcoming" list now excludes Sundays from its
+  holidays query, so a year of bulk-generated Sundays doesn't crowd out
+  real named holidays and the staff member's own leave/WFH.
+- Verified end-to-end against a live MariaDB instance: bulk-generating
+  Sundays (52 rows for a 12-month horizon), re-running it idempotently
+  (no duplicates), a manually-added holiday on a date that happens to be
+  a Sunday surviving a subsequent "Generate Sundays" run unchanged, the
+  Sunday extra-work check-in/check-out cycle (correct status computation,
+  `notes` stamped, visible in the admin attendance monitor), and
+  `cron/mark-absent.php` still skipping Sundays entirely for staff who
+  didn't opt to work.
 
 ## What's planned — V2 ideas
 

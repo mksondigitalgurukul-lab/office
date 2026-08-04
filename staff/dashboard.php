@@ -40,7 +40,10 @@ if ($holidayName) {
 // member's own approved leave/WFH, soonest first.
 $upcoming = [];
 
-$stmt = $pdo->prepare('SELECT holiday_date, name FROM holidays WHERE holiday_date >= ? ORDER BY holiday_date ASC LIMIT 10');
+// Weekly Sundays are excluded here — once a year's worth are generated
+// (see admin/holidays/index.php), they'd otherwise flood this list and
+// crowd out named holidays and this staff member's own leave/WFH.
+$stmt = $pdo->prepare('SELECT holiday_date, name FROM holidays WHERE holiday_date >= ? AND DAYOFWEEK(holiday_date) <> 1 ORDER BY holiday_date ASC LIMIT 10');
 $stmt->execute([$today]);
 foreach ($stmt->fetchAll() as $h) {
     $upcoming[] = ['date' => $h['holiday_date'], 'type' => 'Holiday', 'label' => $h['name']];

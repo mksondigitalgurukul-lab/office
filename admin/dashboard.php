@@ -80,6 +80,7 @@ require __DIR__ . '/../includes/admin-header.php';
   <div class="quick-links">
     <a href="staff/add.php" class="quick-link">+ Add Staff</a>
     <a href="attendance/index.php" class="quick-link">View Today's Attendance</a>
+    <a href="holidays/index.php" class="quick-link">Manage Holidays</a>
     <a href="payout/generate.php" class="quick-link">Generate Payout</a>
     <a href="reports/attendance.php" class="quick-link">Attendance Reports</a>
     <a href="../sql/index.php" class="quick-link">DB Tools</a>

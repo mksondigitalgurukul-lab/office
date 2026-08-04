@@ -18,6 +18,9 @@ if (!$staff || $staff['status'] !== 'active') {
 
 $today       = date('Y-m-d');
 $holidayName = getHolidayName($today);
+$isSunday    = (int) date('N', strtotime($today)) === 7;
+$blocked     = $holidayName && !$isSunday;
+$extraWork   = $holidayName && $isSunday;
 
 $stmt = $pdo->prepare('SELECT * FROM attendance WHERE staff_id = ? AND attendance_date = ?');
 $stmt->execute([$staff['id'], $today]);
@@ -27,7 +30,7 @@ $error   = '';
 $warning = '';
 $success = '';
 
-if (!$holidayName && $_SERVER['REQUEST_METHOD'] === 'POST') {
+if (!$blocked && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
     $ip     = getClientIp();
     $now    = date('H:i:s');
@@ -49,21 +52,22 @@ if (!$holidayName && $_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             $status = computeCheckInStatus($timing['start'], $now, getAttendanceGraceMinutes());
+            $notes  = $extraWork ? 'Extra work — checked in on a Sunday (' . $holidayName . ').' : null;
 
             if ($todayRow) {
                 $stmt = $pdo->prepare(
-                    'UPDATE attendance SET check_in_time = ?, check_in_ip = ?, work_location = ?, status = ? WHERE id = ?'
+                    'UPDATE attendance SET check_in_time = ?, check_in_ip = ?, work_location = ?, status = ?, notes = ? WHERE id = ?'
                 );
-                $stmt->execute([$now, $ip, $location, $status, $todayRow['id']]);
+                $stmt->execute([$now, $ip, $location, $status, $notes ?? $todayRow['notes'], $todayRow['id']]);
             } else {
                 $stmt = $pdo->prepare(
-                    'INSERT INTO attendance (staff_id, attendance_date, check_in_time, check_in_ip, work_location, status)
-                     VALUES (?, ?, ?, ?, ?, ?)'
+                    'INSERT INTO attendance (staff_id, attendance_date, check_in_time, check_in_ip, work_location, status, notes)
+                     VALUES (?, ?, ?, ?, ?, ?, ?)'
                 );
-                $stmt->execute([$staff['id'], $today, $now, $ip, $location, $status]);
+                $stmt->execute([$staff['id'], $today, $now, $ip, $location, $status, $notes]);
             }
 
-            $success = 'Checked in at ' . $now . '.';
+            $success = $extraWork ? 'Checked in at ' . $now . ' — logged as extra Sunday work.' : 'Checked in at ' . $now . '.';
             $stmt = $pdo->prepare('SELECT * FROM attendance WHERE staff_id = ? AND attendance_date = ?');
             $stmt->execute([$staff['id'], $today]);
             $todayRow = $stmt->fetch();
@@ -120,13 +124,17 @@ require __DIR__ . '/../includes/staff-header.php';
   <?php endif; ?>
 
   <div class="card" style="max-width:480px;">
-    <?php if ($holidayName): ?>
+    <?php if ($blocked): ?>
       <p style="margin:0;"><strong>Holiday today</strong> — <?= h($holidayName) ?>. No check-in required.</p>
-    <?php elseif (!$todayRow || $todayRow['check_in_time'] === null): ?>
+    <?php else: ?>
+      <?php if ($extraWork): ?>
+        <p><strong>Sunday</strong> — default day off (<?= h($holidayName) ?>). You can still check in below if you're working today; it'll be logged as extra work.</p>
+      <?php endif; ?>
+      <?php if (!$todayRow || $todayRow['check_in_time'] === null): ?>
       <p>Not checked in yet.</p>
       <form method="post">
         <input type="hidden" name="action" value="check_in">
-        <button type="submit" class="btn">Check In</button>
+        <button type="submit" class="btn"><?= $extraWork ? 'Check In (Extra Work)' : 'Check In' ?></button>
       </form>
     <?php else: ?>
       <p>
@@ -142,6 +150,7 @@ require __DIR__ . '/../includes/staff-header.php';
       <?php else: ?>
         <p style="margin-bottom:0;">Checked out at <strong><?= h($todayRow['check_out_time']) ?></strong>.</p>
       <?php endif; ?>
+    <?php endif; ?>
     <?php endif; ?>
   </div>
 <?php require __DIR__ . '/../includes/staff-footer.php'; ?>
