@@ -8,10 +8,11 @@ $pdo   = getDB();
 
 $id   = (int) ($_GET['id'] ?? $_POST['id'] ?? 0);
 $stmt = $pdo->prepare(
-    'SELECT p.*, s.full_name, s.designation, s.department, ga.name AS generated_by_name
+    'SELECT p.*, s.full_name, s.designation, s.department, ga.name AS generated_by_name, fa.name AS forgiven_by_name
      FROM payouts p
      JOIN staff s ON s.id = p.staff_id
      LEFT JOIN admins ga ON ga.id = p.generated_by
+     LEFT JOIN admins fa ON fa.id = p.forgiven_by
      WHERE p.id = ?'
 );
 $stmt->execute([$id]);
@@ -27,18 +28,40 @@ $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
+    $forgivenAmount = $payout['forgiven_amount'] !== null ? (float) $payout['forgiven_amount'] : null;
+
     if ($action === 'update_bonus' && $payout['status'] === 'draft') {
         $bonus = trim($_POST['bonus'] ?? '0');
         if (!is_numeric($bonus) || (float) $bonus < 0) {
             $error = 'Enter a bonus of 0 or more.';
         } else {
-            $netPayout = round((float) $payout['base_salary'] - (float) $payout['unpaid_deduction'] + (float) $bonus, 2);
+            $netPayout = round((float) $payout['base_salary'] - effectiveDeduction((float) $payout['unpaid_deduction'], $forgivenAmount) + (float) $bonus, 2);
             $stmt = $pdo->prepare('UPDATE payouts SET bonus = ?, net_payout = ? WHERE id = ?');
             $stmt->execute([(float) $bonus, $netPayout, $id]);
             $_SESSION['flash'] = ['type' => 'success', 'text' => 'Bonus updated.'];
             header('Location: view.php?id=' . $id);
             exit;
         }
+    } elseif ($action === 'forgive_deduction' && $payout['status'] === 'draft') {
+        $remaining = effectiveDeduction((float) $payout['unpaid_deduction'], $forgivenAmount);
+        if ($remaining <= 0) {
+            $error = 'There is no remaining unpaid deduction to forgive.';
+        } else {
+            $newForgivenAmount = (float) $payout['unpaid_deduction'];
+            $netPayout = round((float) $payout['base_salary'] - 0 + (float) $payout['bonus'], 2);
+            $stmt = $pdo->prepare('UPDATE payouts SET forgiven_amount = ?, forgiven_by = ?, forgiven_at = NOW(), net_payout = ? WHERE id = ?');
+            $stmt->execute([$newForgivenAmount, $admin['id'], $netPayout, $id]);
+            $_SESSION['flash'] = ['type' => 'success', 'text' => 'Unpaid deduction forgiven.'];
+            header('Location: view.php?id=' . $id);
+            exit;
+        }
+    } elseif ($action === 'unforgive_deduction' && $payout['status'] === 'draft') {
+        $netPayout = round((float) $payout['base_salary'] - (float) $payout['unpaid_deduction'] + (float) $payout['bonus'], 2);
+        $stmt = $pdo->prepare('UPDATE payouts SET forgiven_amount = NULL, forgiven_by = NULL, forgiven_at = NULL, net_payout = ? WHERE id = ?');
+        $stmt->execute([$netPayout, $id]);
+        $_SESSION['flash'] = ['type' => 'success', 'text' => 'Forgiveness reverted — full deduction re-applied.'];
+        header('Location: view.php?id=' . $id);
+        exit;
     } elseif ($action === 'finalize' && $payout['status'] === 'draft') {
         $stmt = $pdo->prepare("UPDATE payouts SET status = 'finalized' WHERE id = ? AND status = 'draft'");
         $stmt->execute([$id]);
@@ -57,7 +80,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'Cannot regenerate — this staff member no longer has a salary set.';
         } else {
             $bonus     = (float) $payout['bonus'];
-            $netPayout = round($figures['base_salary'] - $figures['unpaid_deduction'] + $bonus, 2);
+            $netPayout = round($figures['base_salary'] - effectiveDeduction($figures['unpaid_deduction'], $forgivenAmount) + $bonus, 2);
             $stmt = $pdo->prepare(
                 "UPDATE payouts SET
                     base_salary = ?, present_days = ?, absent_days = ?, on_leave_days = ?,
@@ -70,7 +93,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $figures['on_leave_days'], $figures['wfh_days'], $figures['half_days'],
                 $figures['unpaid_deduction'], $netPayout, $admin['id'], $id,
             ]);
-            $_SESSION['flash'] = ['type' => 'success', 'text' => 'Payout regenerated from current attendance/leave/salary data and reset to draft. Bonus was kept.'];
+            $_SESSION['flash'] = ['type' => 'success', 'text' => 'Payout regenerated from current attendance/leave/salary data and reset to draft. Bonus and any forgiven deduction were kept.'];
             header('Location: view.php?id=' . $id);
             exit;
         }
@@ -125,7 +148,20 @@ require __DIR__ . '/../../includes/admin-header.php';
         <tr><td>Absent Days</td><td><?= (int) $payout['absent_days'] ?></td></tr>
         <tr><td>On Leave Days</td><td><?= (int) $payout['on_leave_days'] ?></td></tr>
         <tr><td>WFH Days (of the above)</td><td><?= (int) $payout['wfh_days'] ?></td></tr>
-        <tr><td>Unpaid Deduction</td><td>&minus; <?= h(number_format((float) $payout['unpaid_deduction'], 2)) ?></td></tr>
+        <tr>
+          <td>Unpaid Deduction</td>
+          <td>
+            <?php if ($payout['forgiven_amount'] !== null): ?>
+              <span style="text-decoration:line-through; color:var(--color-text-muted);">&minus; <?= h(number_format((float) $payout['unpaid_deduction'], 2)) ?></span>
+              <span class="badge badge-success">Forgiven</span>
+              <div style="margin-top:6px; padding:8px 10px; background:var(--color-success-soft); border-radius:var(--radius-sm); font-size:0.85rem;">
+                <strong><?= h(number_format((float) $payout['forgiven_amount'], 2)) ?></strong> forgiven by <?= h($payout['forgiven_by_name'] ?? '—') ?> on <?= h($payout['forgiven_at']) ?>
+              </div>
+            <?php else: ?>
+              &minus; <?= h(number_format((float) $payout['unpaid_deduction'], 2)) ?>
+            <?php endif; ?>
+          </td>
+        </tr>
         <tr><td>Bonus</td><td>+ <?= h(number_format((float) $payout['bonus'], 2)) ?></td></tr>
         <tr><td><strong>Net Payout</strong></td><td><strong><?= h(number_format((float) $payout['net_payout'], 2)) ?></strong></td></tr>
       </tbody>
@@ -151,6 +187,27 @@ require __DIR__ . '/../../includes/admin-header.php';
         </div>
         <button type="submit" class="btn">Update Bonus</button>
       </form>
+    </div>
+
+    <div class="card no-print" style="max-width:420px; margin-bottom:16px;">
+      <h2 style="margin-top:0;">Unpaid Deduction</h2>
+      <?php if ($payout['forgiven_amount'] !== null): ?>
+        <p style="color:var(--color-text-muted);">Forgiven — <?= h(number_format((float) $payout['forgiven_amount'], 2)) ?> by <?= h($payout['forgiven_by_name'] ?? '—') ?>.</p>
+        <form method="post" data-confirm="Revert forgiveness and re-apply the full unpaid deduction?">
+          <input type="hidden" name="id" value="<?= (int) $id ?>">
+          <input type="hidden" name="action" value="unforgive_deduction">
+          <button type="submit" class="btn btn-secondary">Un-forgive</button>
+        </form>
+      <?php elseif ((float) $payout['unpaid_deduction'] > 0): ?>
+        <p style="color:var(--color-text-muted);">Waive the <?= h(number_format((float) $payout['unpaid_deduction'], 2)) ?> unpaid deduction for this payout — net payout goes up by that amount. Recorded against your admin account.</p>
+        <form method="post" data-confirm="Forgive the full unpaid deduction for this payout?">
+          <input type="hidden" name="id" value="<?= (int) $id ?>">
+          <input type="hidden" name="action" value="forgive_deduction">
+          <button type="submit" class="btn">Forgive Deduction</button>
+        </form>
+      <?php else: ?>
+        <p style="color:var(--color-text-muted); margin:0;">No unpaid deduction on this payout.</p>
+      <?php endif; ?>
     </div>
   <?php endif; ?>
 

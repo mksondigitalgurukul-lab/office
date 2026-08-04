@@ -321,6 +321,18 @@ function computePayoutFigures(int $staffId, string $month): ?array
 }
 
 /**
+ * How much of a payout's unpaid_deduction is actually applied to
+ * net_payout after any admin forgiveness (payouts.forgiven_amount) — see
+ * "Payout" in CLAUDE.md. Never negative, even if forgiven_amount exceeds
+ * unpaid_deduction (e.g. after a Regenerate lowered the deduction below
+ * what was previously forgiven).
+ */
+function effectiveDeduction(float $unpaidDeduction, ?float $forgivenAmount): float
+{
+    return max(0.0, $unpaidDeduction - ($forgivenAmount ?? 0.0));
+}
+
+/**
  * Map any status/value string used across the app to one of five semantic
  * badge variants (success/warning/danger/info/neutral), so every page
  * colors the same concept the same way. Purely presentational — see

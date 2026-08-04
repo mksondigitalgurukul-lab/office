@@ -27,7 +27,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $skippedNoSalary = [];
 
         foreach ($targets as $t) {
-            $stmt = $pdo->prepare('SELECT status, bonus FROM payouts WHERE staff_id = ? AND month = ?');
+            $stmt = $pdo->prepare('SELECT status, bonus, forgiven_amount FROM payouts WHERE staff_id = ? AND month = ?');
             $stmt->execute([$t['id'], $month]);
             $existing = $stmt->fetch();
 
@@ -42,8 +42,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 continue;
             }
 
-            $bonus     = $existing ? (float) $existing['bonus'] : 0.0;
-            $netPayout = round($figures['base_salary'] - $figures['unpaid_deduction'] + $bonus, 2);
+            $bonus          = $existing ? (float) $existing['bonus'] : 0.0;
+            $forgivenAmount = $existing && $existing['forgiven_amount'] !== null ? (float) $existing['forgiven_amount'] : null;
+            $netPayout      = round($figures['base_salary'] - effectiveDeduction($figures['unpaid_deduction'], $forgivenAmount) + $bonus, 2);
 
             $stmt = $pdo->prepare(
                 'INSERT INTO payouts (staff_id, month, base_salary, present_days, absent_days, on_leave_days, wfh_days, half_days, unpaid_deduction, bonus, net_payout, status, generated_by, generated_at)

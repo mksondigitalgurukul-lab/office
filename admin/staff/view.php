@@ -161,16 +161,17 @@ require __DIR__ . '/../../includes/admin-header.php';
   <div class="overflow-x">
     <table class="db-table">
       <thead>
-        <tr><th>Effective From</th><th>Monthly Salary</th><th>Set By</th><th>Recorded At</th></tr>
+        <tr><th>Effective From</th><th>Monthly Salary</th><th>Reason</th><th>Set By</th><th>Recorded At</th></tr>
       </thead>
       <tbody>
         <?php if (!$salaryHistory): ?>
-          <tr><td colspan="4" style="color:var(--color-text-muted);">No salary recorded yet.</td></tr>
+          <tr><td colspan="5" style="color:var(--color-text-muted);">No salary recorded yet.</td></tr>
         <?php endif; ?>
         <?php foreach ($salaryHistory as $row): ?>
           <tr>
             <td><?= h($row['effective_from']) ?></td>
             <td><?= h(number_format((float) $row['monthly_salary'], 2)) ?></td>
+            <td><?= $row['reason'] !== '' ? h($row['reason']) : '—' ?></td>
             <td><?= h($row['set_by_name'] ?? '—') ?></td>
             <td><?= h($row['created_at']) ?></td>
           </tr>

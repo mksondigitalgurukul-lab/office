@@ -55,16 +55,21 @@ hosting. Deployed at
    `settings`, `office_locations`, `holidays`, `staff`,
    `staff_work_time_history`, `attendance`, `leave_types` (seeded with
    Sick/Casual/Paid/Unpaid), `leave_requests`, `wfh_requests`,
-   `staff_salary`, and `payouts` tables and show you their structure.
-   **Three files need a manual step**: `011_attendance_add_on_leave_status.sql`
-   and `014_leave_types_add_is_active.sql` are `ALTER TABLE`s, and
+   `staff_salary`, `payouts`, and `attendance_sessions` tables and show
+   you their structure.
+   **Five files need a manual step**: `011_attendance_add_on_leave_status.sql`,
+   `014_leave_types_add_is_active.sql`, `017_staff_salary_add_reason.sql`,
+   and `018_payouts_add_forgiveness.sql` are `ALTER TABLE`s, and
    `015_delhi_holidays_2026_2027.sql` is a data seed — none have a
    `CREATE TABLE`, so none auto-run. Find each in the list and click its
    **Re-run** button once. Without the first, `cron/mark-absent.php`
    can't record the `'on_leave'` attendance status (see step 12 below);
-   without the second, leave-types management (step 13) won't work;
-   the third seeds a starter Delhi/India holiday calendar (see step 11
-   below) — skip it if you'd rather add your own holidays from scratch.
+   without the second, leave-types management (step 13) won't work; the
+   third seeds a starter Delhi/India holiday calendar (see step 11 below)
+   — skip it if you'd rather add your own holidays from scratch; without
+   the fourth, setting a staff member's salary will error (the reason
+   dropdown needs its column); without the fifth, "Forgive Deduction" on
+   a payout will error.
 5. **Create the first admin.** Two options — either works:
    - **Via DB Tools:** on `https://www.digitalalipro.in/office/sql/index.php`
      (still in setup mode), scroll to **Admin Account** and fill in the
@@ -151,21 +156,26 @@ hosting. Deployed at
     hides it from the staff request form without touching past requests.
 14. **Set staff salaries — required before generating any payout.** On
     each staff member's profile (**Staff** → pick a staff member), scroll
-    to **Salary** → **Set / Change Salary**, enter their monthly salary
-    and an effective-from date. Like work timing, this is append-only —
-    changing it later adds a new row, it never edits history. A staff
-    member with no salary set is silently skipped when you generate a
-    payout for them (and told so in the result message).
+    to **Salary** → **Set / Change Salary**, enter their monthly salary,
+    an effective-from date, and a **reason** — pick a preset from the
+    dropdown (Annual Increment, Promotion, etc.) or choose "Other" to
+    type a short reason. Like work timing, this is append-only — changing
+    it later adds a new row, it never edits history. A staff member with
+    no salary set is silently skipped when you generate a payout for them
+    (and told so in the result message).
 15. **Generate a monthly payout.** Go to **Payout** → **Generate Payout**,
     pick a month and either all active staff or one, and submit. This
     creates/updates **draft** payouts using that month's attendance and
     approved-leave data — see `CLAUDE.md` → "Payout" for the exact
     formula. From a draft's detail page you can adjust the **bonus**
-    (recomputes the net payout live), then **Finalize** it — finalized
-    (and later **paid**) payouts are never silently overwritten by a
-    later "Generate"; use that same payout's **Regenerate** button if you
-    need to recalculate one after attendance/leave data changed (it
-    resets to draft and keeps the bonus). **Mark as Paid** on a finalized
+    (recomputes the net payout live), or **Forgive Deduction** to waive
+    the unpaid deduction entirely (the payslip then shows it struck
+    through with a highlighted "Forgiven by {you}" note; **Un-forgive**
+    reverts it) — then **Finalize** it. Finalized (and later **paid**)
+    payouts are never silently overwritten by a later "Generate"; use
+    that same payout's **Regenerate** button if you need to recalculate
+    one after attendance/leave data changed (it resets to draft and keeps
+    both the bonus and any forgiveness). **Mark as Paid** on a finalized
     payout stamps `paid_at`. Each payout's detail page is also a
     print-friendly payslip — use the **Print / Save as PDF** button (a
     real PDF export wasn't built; the browser's print-to-PDF covers it).
