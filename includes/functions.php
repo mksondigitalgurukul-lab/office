@@ -193,6 +193,102 @@ function hasApprovedLeave(int $staffId, string $date): bool
 }
 
 /**
+ * Page-visit-triggered replacement for a daily cron job: catches up on
+ * marking 'absent'/'on_leave' attendance rows for any past date that
+ * hasn't been processed yet, up to yesterday. Called from every admin
+ * page via includes/admin-header.php — see CLAUDE.md "Attendance" for
+ * the full design.
+ *
+ * Starts from the day after `last_absent_sync_date` (a settings row
+ * seeded by sql/019_seed_absent_sync_baseline.sql), capped to at most
+ * the last 90 days so one login can never trigger an unbounded backfill.
+ * Never touches a date that already has an attendance row for that staff
+ * member — a self check-in always wins, no matter how stale the sync is.
+ *
+ * Returns a summary array if it actually marked anything, or null if
+ * there was nothing to do (the common case — one cheap settings lookup).
+ */
+function syncAbsences(): ?array
+{
+    $lastSynced = getSetting('last_absent_sync_date');
+    if ($lastSynced === null) {
+        return null; // baseline not seeded yet — sql/019 hasn't been run
+    }
+
+    $today = new DateTime('today');
+    $start = (new DateTime($lastSynced))->modify('+1 day');
+    $cap   = (clone $today)->modify('-90 days');
+    if ($start < $cap) {
+        $start = $cap;
+    }
+    $end = (clone $today)->modify('-1 day');
+
+    if ($start > $end) {
+        return null; // already caught up
+    }
+
+    $pdo   = getDB();
+    $staff = $pdo->query("SELECT id, joined_date FROM staff WHERE status = 'active'")->fetchAll();
+
+    $absentStmt = $pdo->prepare(
+        "INSERT INTO attendance (staff_id, attendance_date, work_location, status, notes)
+         VALUES (?, ?, 'unverified', 'absent', ?)"
+    );
+    $onLeaveStmt = $pdo->prepare(
+        "INSERT INTO attendance (staff_id, attendance_date, work_location, status, notes)
+         VALUES (?, ?, 'unverified', 'on_leave', ?)"
+    );
+    $existingStmt = $pdo->prepare('SELECT staff_id FROM attendance WHERE attendance_date = ?');
+
+    $marked  = 0;
+    $onLeave = 0;
+
+    $cursor = clone $start;
+    while ($cursor <= $end) {
+        $date = $cursor->format('Y-m-d');
+
+        if (getHolidayName($date) === null) {
+            $existingStmt->execute([$date]);
+            $existingSet = array_flip($existingStmt->fetchAll(PDO::FETCH_COLUMN));
+
+            foreach ($staff as $s) {
+                $staffId = (int) $s['id'];
+                if (isset($existingSet[$staffId]) || ($s['joined_date'] !== null && $s['joined_date'] > $date)) {
+                    continue;
+                }
+
+                try {
+                    if (hasApprovedLeave($staffId, $date)) {
+                        $onLeaveStmt->execute([$staffId, $date, 'Auto-marked on_leave (attendance sync — no cron job used)']);
+                        $onLeave++;
+                    } elseif (!hasApprovedWfh($staffId, $date)) {
+                        $absentStmt->execute([$staffId, $date, 'Auto-marked absent (attendance sync — no cron job used)']);
+                        $marked++;
+                    }
+                } catch (PDOException $e) {
+                    // Unique constraint hit (e.g. a concurrent check-in) — skip.
+                }
+            }
+        }
+
+        $cursor->modify('+1 day');
+    }
+
+    setSetting('last_absent_sync_date', $end->format('Y-m-d'));
+
+    if ($marked === 0 && $onLeave === 0) {
+        return null;
+    }
+
+    return [
+        'marked'   => $marked,
+        'on_leave' => $onLeave,
+        'from'     => $start->format('Y-m-d'),
+        'to'       => $end->format('Y-m-d'),
+    ];
+}
+
+/**
  * Resolve the monthly salary that applies to a staff member on a given
  * date (defaults to today): the latest staff_salary row with
  * effective_from <= $onDate. Unlike work timing there is no universal

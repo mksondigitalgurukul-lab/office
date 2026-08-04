@@ -135,13 +135,12 @@ at the bottom for where to pick up next.
                                       (manual Re-run required, like 011/014) — see "Payout"
     018_payouts_add_forgiveness.sql   ALTER — adds forgiven_amount/forgiven_by/forgiven_at
                                       to payouts (manual Re-run required) — see "Payout"
+    019_seed_absent_sync_baseline.sql   Seed data — starting point for the page-visit
+                                        absent-sync (manual Re-run required) — see "Attendance"
     index.php            Schema runner + DB dashboard + Admin Account section (see below)
     .htaccess             Blocks direct HTTP access to *.txt files (key.txt, schema_log.txt)
     key.txt               Admin management key — gitignored, created by the Admin Account section
-  /cron
-    mark-absent.php       Daily script: marks active staff with no attendance row for
-                          yesterday as 'absent' — now leave/WFH-aware, see "Attendance" below
-  config-example.php     Tracked config template (DB credentials + CRON_SECRET placeholders)
+  config-example.php     Tracked config template (DB credentials placeholders)
   config.php            Copied from config-example.php on deploy — gitignored, never committed
   .gitignore
   index.php              Redirects to /admin/login.php
@@ -229,7 +228,7 @@ database by hand in phpMyAdmin.
 | Table | Purpose |
 |---|---|
 | `admins` | Admin/manager login accounts. `role` is `admin` or `manager`. Password stored as `password_hash()`. |
-| `settings` | Key/value app config (`setting_key` PK, `setting_value`). Seeded with `company_name`, `default_work_start_time`, `default_work_end_time`, `timezone`, `attendance_grace_minutes`. |
+| `settings` | Key/value app config (`setting_key` PK, `setting_value`). Seeded with `company_name`, `default_work_start_time`, `default_work_end_time`, `timezone`, `attendance_grace_minutes`, and `last_absent_sync_date` (the page-visit absent-sync's checkpoint — see "Attendance" below). |
 | `office_locations` | Named office branches with an `ip_address`, for future WiFi-based attendance check-in. `is_active` flag. |
 | `holidays` | Company holiday dates. `applies_to` is `all` or `specific` (only `'all'` is functional — see below). Managed at `admin/holidays/index.php` — add one-off holidays, or bulk-generate the next year's Sundays. A `holiday_staff` join table is stubbed (commented out) in `004_holidays.sql` for targeting specific staff once the staff table exists — **not built yet**. |
 | `staff` | Employee records + their own login credentials. `work_mode` is `office`/`wfh`/`hybrid`. `status` is `active`/`inactive` (`inactive` = soft delete — the record is kept, and inactive staff cannot log in). `created_by` references the admin who created the record. |
@@ -283,8 +282,8 @@ letting a staff member check out and check back in the same day (see
 
 - **Holiday skip:** if `getHolidayName($date)` returns non-null,
   `staff/attendance.php` shows "Holiday today" instead of check-in/out
-  buttons, and the daily cron skips the date entirely — no attendance rows
-  are created for a holiday at all (not even 'absent'). `applies_to =
+  buttons, and `syncAbsences()` skips the date entirely — no attendance
+  rows are created for a holiday at all (not even 'absent'). `applies_to =
   'specific'` is currently treated the same as `'all'` — per-staff holiday
   targeting via the (still unbuilt) `holiday_staff` table is deferred to
   a future prompt, so **any** holiday row blocks attendance company-wide
@@ -317,7 +316,7 @@ letting a staff member check out and check back in the same day (see
     left as-is. This re-evaluates on **every** check-out that day, so a
     second session finishing can push the day's total back over the
     half-day threshold even if the first session alone wasn't enough.
-  - `'absent'` and `'on_leave'` are only ever set by `cron/mark-absent.php`
+  - `'absent'` and `'on_leave'` are only ever set by `syncAbsences()`
     or by an admin's manual override — never by the check-in/out flow
     itself. `'on_leave'` requires the `011_attendance_add_on_leave_status.sql`
     migration to have been (manually) run — see the `/sql` listing above.
@@ -367,22 +366,57 @@ letting a staff member check out and check back in the same day (see
   IP is never overwritten by a later correction. Every save appends
   `[Manually edited by {admin name} on {timestamp}]` plus any optional
   reason to `notes` — prior notes are kept, never overwritten.
-- **`cron/mark-absent.php`** runs once daily (see README for cPanel
-  scheduling) and, for **yesterday's** date only, considers every active
-  staff member with no attendance row for that date (skipped entirely if
-  yesterday was a company-wide holiday):
-  - Approved leave covering that date (`hasApprovedLeave()`) → inserts an
-    `'on_leave'` row instead of `'absent'` (a deliberate choice — see
-    "Leave & WFH requests" below for why leave and WFH are treated
-    differently here).
-  - Approved WFH for that date, no check-in (`hasApprovedWfh()`) → **no
-    row is inserted at all**, same treatment as a holiday.
-  - Otherwise → `'absent'` row (`work_location = 'unverified'`), as before.
-  Idempotent: safe to re-run, existing rows are left untouched. Runs via
-  CLI with no auth; if triggered over HTTP instead (e.g. a cPanel "URL"
-  cron job) it requires `?key=` to match `CRON_SECRET` in `config.php`
-  (placeholder in `config-example.php` — change it on the real server's
-  `config.php`).
+- **`syncAbsences()`** (`includes/functions.php`) is the absent-marker —
+  **no cron job required**. It's called from `includes/admin-header.php`
+  on **every** admin page load (guarded by `empty($bootstrapping)` so it
+  never fires during `sql/index.php`'s no-admin-yet setup mode), so it
+  runs automatically whenever an admin visits any page. It processes
+  every date from the day after `settings.last_absent_sync_date` (seeded
+  to `2026-07-31` by `sql/019_seed_absent_sync_baseline.sql`, so the
+  first-ever sync backfills from 2026-08-01 onward) through **yesterday**
+  — never today, since today isn't over. For each date not already
+  processed:
+  - Skipped entirely if that date was a company-wide holiday (no rows
+    touched at all for anyone).
+  - Per active staff member with no attendance row for that date **and**
+    `joined_date <= that date`:
+    - Approved leave covering it (`hasApprovedLeave()`) → `'on_leave'`
+      row instead of `'absent'` (a deliberate choice — see "Leave & WFH
+      requests" below for why leave and WFH are treated differently
+      here).
+    - Approved WFH, no check-in (`hasApprovedWfh()`) → **no row inserted
+      at all**, same treatment as a holiday.
+    - Otherwise → `'absent'` row (`work_location = 'unverified'`).
+  - **Capped at the last 90 days** — if `last_absent_sync_date` is more
+    than 90 days stale (e.g. no admin logged in for months), only the
+    most recent 90 days are backfilled; anything older is permanently
+    left as "no record" rather than triggering an unbounded backfill on
+    one page load. Ordinary usage (an admin logging in every few days)
+    never gets anywhere near this cap — it exists purely as a safety
+    bound for long gaps.
+  - **Never touches a date that already has an attendance row** — a
+    staff member's own check-in always wins outright, no matter how
+    stale the sync was; this is the one invariant that's never
+    negotiable, whether the row came from self check-in, an admin's
+    manual edit, or a previous sync run.
+  - Idempotent and safe under concurrent requests: a plain `INSERT`
+    guarded by checking existing rows first, wrapped in a `try`/`catch`
+    per staff-date pair so a unique-constraint hit (two admins loading a
+    page at the same instant) is silently skipped rather than erroring
+    the page.
+  - Returns `null` (the common case — one cheap `settings` lookup, no
+    further queries) if there's nothing to sync; otherwise returns a
+    summary that `admin-header.php` renders as a one-line success alert
+    at the top of the page ("Attendance sync: marked N absent, M on
+    leave, for {from} to {to}"), so admins have visibility into what
+    just happened rather than it being silent.
+  - This replaced `cron/mark-absent.php` (removed) — see "What's built"
+    below for why: a page-visit trigger needs no cPanel cron setup at
+    all, at the cost of only running when an admin happens to visit,
+    rather than guaranteed nightly. A payout generated for a month
+    before any sync has caught up on that period will undercount
+    absences — regenerate it after a sync has run to get accurate
+    figures.
 - **Self-service work report** (`staff/work-report.php`): a month view,
   day-by-day, of a staff member's own attendance — every
   `attendance_sessions` segment for that day (check-in/check-out pairs +
@@ -409,7 +443,7 @@ Managed entirely at `admin/holidays/index.php` (nav: **Admin → Holidays**)
 — list (upcoming by default, `?all=1` to include past dates), add one,
 delete one, and a bulk **"Generate Sundays"** action. There is no
 `holidays` CRUD elsewhere; every holiday-aware code path (`getHolidayName()`,
-the staff dashboard's "Upcoming" list, `cron/mark-absent.php`) just reads
+the staff dashboard's "Upcoming" list, `syncAbsences()`) just reads
 whatever rows exist in the table, regardless of how they got there.
 
 - **Adding one-off holidays:** a plain date + name form, always inserts
@@ -449,10 +483,10 @@ whatever rows exist in the table, regardless of how they got there.
     "Payout" above). If a worked Sunday should be paid extra, that's a
     manual **bonus** on that staff member's payout, same as any other
     ad-hoc adjustment.
-  - `cron/mark-absent.php` is unaffected by any of this — a Sunday with a
-    `holidays` row is still a holiday to the cron, so it's skipped
-    entirely for anyone who *didn't* voluntarily check in (never marked
-    `'absent'`), exactly like any other holiday.
+  - `syncAbsences()` is unaffected by any of this — a Sunday with a
+    `holidays` row is still a holiday to it, so it's skipped entirely for
+    anyone who *didn't* voluntarily check in (never marked `'absent'`),
+    exactly like any other holiday.
 - **Staff dashboard "Upcoming" list** (`staff/dashboard.php`) explicitly
   excludes Sundays from its holidays query (`DAYOFWEEK(holiday_date) <>
   1`) — once a year of Sundays exists, showing them all would crowd out
@@ -526,12 +560,12 @@ whatever rows exist in the table, regardless of how they got there.
     staff-side form additionally blocks resubmission with an error while
     an existing request for that date is still `pending` or `approved`
     (only a `rejected` one can be resubmitted).
-- **Why leave and WFH are treated differently in `cron/mark-absent.php`:**
+- **Why leave and WFH are treated differently in `syncAbsences()`:**
   approved leave means the staff member isn't expected to work that day at
   all, so it gets its own `'on_leave'` attendance status — a clear signal
   for future reports. Approved WFH means they *were* expected to work
   (just remotely) — if they never checked in, that's a missed check-in
-  worth noticing, not a day off, so the cron doesn't fabricate a `'wfh'`
+  worth noticing, not a day off, so it doesn't fabricate a `'wfh'`
   attendance row for them; it simply doesn't penalize them with `'absent'`
   either. This was a judgment call within what the prompt allowed ("use
   your judgment... document the choice clearly") — revisit if reporting
@@ -540,7 +574,7 @@ whatever rows exist in the table, regardless of how they got there.
   `hasApprovedWfh(int $staffId, string $date): bool` in
   `includes/functions.php` are the single source of truth for "was this
   staff member on approved leave/WFH on this date" — reuse them (used by
-  both `staff/attendance.php`'s check-in and `cron/mark-absent.php`).
+  both `staff/attendance.php`'s check-in and `syncAbsences()`).
 - **Leave types** (`admin/leave-types/index.php`) are never hard-deleted —
   `is_active` (added by `014_leave_types_add_is_active.sql`) soft-deletes
   a type instead, since existing `leave_requests` may reference it.
@@ -599,7 +633,7 @@ calculation lives in `includes/functions.php` as
   approved+unpaid request that overlaps the target month (a request
   spanning a month boundary is split correctly). This is deliberately
   independent of whatever's actually landed in `attendance` — reliable
-  even if `cron/mark-absent.php` hasn't caught up on the last day or two
+  even if `syncAbsences()` hasn't caught up on the last day or two
   of the month yet. The `on_leave_days` **column** on `payouts` is a
   separate, purely informational count of `attendance.status = 'on_leave'`
   rows — it can include *paid* leave too, and isn't part of the deduction.
@@ -1202,6 +1236,28 @@ several stale/inconsistent nav links before Prompt 6), every page
   `net_payout` correctly around it; and attempting to forgive an
   already-fully-forgiven payout is rejected with a clear error rather
   than double-counting.
+- **Replaced `cron/mark-absent.php` with a page-visit sync — no cron job
+  required.** The daily absent-marker used to be a standalone script that
+  did nothing unless a cPanel cron job called it. It's now
+  `syncAbsences()` in `includes/functions.php`, called from every admin
+  page via `includes/admin-header.php`; see "Attendance" above for the
+  full design (fixed baseline seeded by `sql/019_...sql`, 90-day safety
+  cap on long gaps, multi-day catch-up in one pass, never overwrites an
+  existing row). `cron/` and `CRON_SECRET` (in `config-example.php`) were
+  removed entirely — nothing references them anymore. The tradeoff
+  (explicitly signed off on): this only runs when an admin actually
+  visits a page, not on a guaranteed nightly schedule, so a payout
+  generated before a sync has caught up on that period will undercount
+  absences until it's regenerated.
+- Verified end-to-end against a live MariaDB instance: a multi-day gap
+  (3 days) correctly backfilled in one page visit with the right
+  `on_leave`/`absent`/holiday-skip/`joined_date`-respecting outcomes per
+  date; re-visiting immediately after does nothing (idempotent, no
+  duplicate rows, no flash shown); a staff member's own self check-in for
+  a date inside the gap is never touched by the sync (confirmed via
+  direct comparison — the sync's own count excludes that date); and an
+  18-month-stale checkpoint correctly caps to exactly the most recent 90
+  days rather than attempting the full gap, completing in ~150ms.
 
 ## What's planned — V2 ideas
 
@@ -1235,11 +1291,11 @@ was skipped. Recommendations for a V2, roughly in order of likely value:
 - **No email/SMS notifications** anywhere (leave approved, payout ready,
   etc.) — everything is check-the-app. Notifications would meaningfully
   improve the staff-side experience.
-- **Two migrations require a manual "Re-run" click** after deploy
-  (`011_attendance_add_on_leave_status.sql`,
-  `014_leave_types_add_is_active.sql`) since `sql/index.php`'s auto-run
-  only fires for files with a `CREATE TABLE`. Not a bug, but worth a
-  glance if a V2 wants the schema runner to auto-run ALTER-only files too.
+- **Several migrations require a manual "Re-run" click** after deploy
+  (`011`, `014`, `015`, `017`, `018`, `019` — see the `/sql` listing)
+  since `sql/index.php`'s auto-run only fires for files with a
+  `CREATE TABLE`. Not a bug, but worth a glance if a V2 wants the schema
+  runner to auto-run ALTER/data-seed-only files too.
 - **PDF payslip export** was explicitly optional for V1 and wasn't
   built — the payslip view is print-styled and relies on the browser's
   "print to PDF," which covers the same need without a PDF library

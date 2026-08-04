@@ -46,9 +46,7 @@ hosting. Deployed at
    define('DB_USER', 'your_database_user');
    define('DB_PASS', 'your_database_password');
    ```
-   Also change `CRON_SECRET` from its placeholder — it's needed if you set
-   up the attendance cron job via an HTTP URL (see step 12 below). Never
-   commit `config.php` itself back into git.
+   Never commit `config.php` itself back into git.
 4. **Create the schema.** Visit `https://www.digitalalipro.in/office/sql/index.php`
    in a browser. On a brand-new install (no admin account yet) this page is
    open in **setup mode** — it will automatically create the `admins`,
@@ -57,19 +55,20 @@ hosting. Deployed at
    Sick/Casual/Paid/Unpaid), `leave_requests`, `wfh_requests`,
    `staff_salary`, `payouts`, and `attendance_sessions` tables and show
    you their structure.
-   **Five files need a manual step**: `011_attendance_add_on_leave_status.sql`,
+   **Six files need a manual step**: `011_attendance_add_on_leave_status.sql`,
    `014_leave_types_add_is_active.sql`, `017_staff_salary_add_reason.sql`,
-   and `018_payouts_add_forgiveness.sql` are `ALTER TABLE`s, and
-   `015_delhi_holidays_2026_2027.sql` is a data seed — none have a
-   `CREATE TABLE`, so none auto-run. Find each in the list and click its
-   **Re-run** button once. Without the first, `cron/mark-absent.php`
-   can't record the `'on_leave'` attendance status (see step 12 below);
-   without the second, leave-types management (step 13) won't work; the
-   third seeds a starter Delhi/India holiday calendar (see step 11 below)
-   — skip it if you'd rather add your own holidays from scratch; without
-   the fourth, setting a staff member's salary will error (the reason
-   dropdown needs its column); without the fifth, "Forgive Deduction" on
-   a payout will error.
+   `018_payouts_add_forgiveness.sql`, and `019_seed_absent_sync_baseline.sql`
+   are `ALTER TABLE`s or data seeds, and `015_delhi_holidays_2026_2027.sql`
+   is a data seed — none have a `CREATE TABLE`, so none auto-run. Find
+   each in the list and click its **Re-run** button once. Without the
+   first, the absent-sync (step 12 below) can't record the `'on_leave'`
+   attendance status; without the second, leave-types management (step
+   13) won't work; the third seeds a starter Delhi/India holiday calendar
+   (see step 11 below) — skip it if you'd rather add your own holidays
+   from scratch; without the fourth, setting a staff member's salary will
+   error (the reason dropdown needs its column); without the fifth,
+   "Forgive Deduction" on a payout will error; without the sixth, the
+   absent-sync (step 12) won't run at all.
 5. **Create the first admin.** Two options — either works:
    - **Via DB Tools:** on `https://www.digitalalipro.in/office/sql/index.php`
      (still in setup mode), scroll to **Admin Account** and fill in the
@@ -128,28 +127,28 @@ hosting. Deployed at
     if they choose to work that day (it doesn't automatically add
     anything to their payout — see `CLAUDE.md` → "Holidays" if you want
     to pay extra for it, that's a manual bonus). Do this before step 12
-    below, since the absent-marker cron treats every holiday date the
-    same way.
-12. **Schedule the daily absent-marker.** `cron/mark-absent.php` marks
-    active staff with no attendance row for *yesterday* as `'absent'`
-    (skipping holidays, and now aware of approved leave/WFH — see
-    `CLAUDE.md` → "Attendance" and "Leave & WFH requests" for the exact
-    rules). Requires step 4's `011_attendance_add_on_leave_status.sql`
-    Re-run to have been done, or `'on_leave'` rows will fail to insert.
-    In cPanel → **Cron Jobs**, add one that runs shortly after
-    midnight (e.g. `5 0 * * *` for 12:05 AM daily). Two ways to run it:
-    - **Preferred — run the PHP file directly:**
-      ```bash
-      php /home/YOUR_CPANEL_USER/public_html/office/cron/mark-absent.php
-      ```
-    - **Fallback — if your cron only supports hitting a URL:**
-      ```bash
-      wget -q -O /dev/null "https://www.digitalalipro.in/office/cron/mark-absent.php?key=YOUR_CRON_SECRET"
-      ```
-      `YOUR_CRON_SECRET` must match `CRON_SECRET` in `config.php` (step 3)
-      — without a matching key, an HTTP request to this script is
-      rejected with 403. Running it via CLI/SSH cron never needs the key.
-      The script is idempotent, so an accidental double-run is harmless.
+    below, since the absent-marker treats every holiday date the same
+    way.
+12. **Nothing to schedule — the absent-marker runs itself.** There's no
+    cron job to set up. `includes/functions.php`'s `syncAbsences()` runs
+    automatically on every admin page load (wired into
+    `includes/admin-header.php`) and catches up on marking
+    `'absent'`/`'on_leave'` for any past day nobody's visited since —
+    skipping holidays, and aware of approved leave/WFH (see `CLAUDE.md` →
+    "Attendance" and "Leave & WFH requests" for the exact rules).
+    Requires step 4's `011_attendance_add_on_leave_status.sql` and
+    `019_seed_absent_sync_baseline.sql` Re-runs to have been done, or it
+    won't do anything. You'll see a green "Attendance sync: marked N
+    absent..." banner at the top of the page whenever it actually catches
+    something up; most page loads it does nothing (already caught up) and
+    shows no banner. It backfills at most the last 90 days on any single
+    visit — if nobody logs in for longer than that, older gaps are
+    permanently left unmarked rather than triggering a huge one-time
+    backfill. **Consequence to know:** if you generate a payout for a
+    month before any admin has visited a page since that period ended,
+    the payout will undercount absences (those days simply have no
+    attendance row yet) — use **Regenerate** on that payout after the
+    sync has caught up to get accurate figures.
 13. **Review leave types (optional).** Sick/Casual/Paid/Unpaid are seeded
     automatically. Go to **Leave Types** to add more, rename one, toggle
     whether it's paid, or deactivate one you don't use — deactivating
@@ -196,8 +195,9 @@ hosting. Deployed at
    php -S localhost:8000
    ```
 3. Visit `http://localhost:8000/sql/index.php` to create the schema, then
-   click **Re-run** on `011_attendance_add_on_leave_status.sql` and
-   `014_leave_types_add_is_active.sql` (see step 4 above), then visit
+   click **Re-run** on `011_attendance_add_on_leave_status.sql`,
+   `014_leave_types_add_is_active.sql`, and
+   `019_seed_absent_sync_baseline.sql` (see step 4 above), then visit
    `http://localhost:8000/create-admin.php` to create your first admin.
 4. Log in at `http://localhost:8000/admin/login.php`, add a staff member
    under **Staff**, then log in as them at
@@ -205,8 +205,10 @@ hosting. Deployed at
 5. To test office-WiFi verification locally, add your machine's IP as an
    `office_locations` row via **Office Locations** (when using PHP's
    built-in server from `localhost`, that's usually `127.0.0.1`).
-6. Run `php cron/mark-absent.php` directly from the project root to test
-   the absent-marker without waiting for a real cron job.
+6. Visit any admin page (e.g. reload the dashboard) to trigger
+   `syncAbsences()` and test the absent-marker — no cron job needed, it
+   runs automatically on page load (requires the `011` and `019`
+   migrations from step 3 above).
 7. Set a salary under that staff member's profile, then generate a
    payout for them under **Payout** to test the calculation.
 
@@ -242,18 +244,19 @@ hosting. Deployed at
                    helpers), staff_auth.php (staff session helpers),
                    functions.php (escaping + settings + work-timing +
                    attendance + leave/WFH + payout helpers + badgeVariant()
-                   status-color helper), admin-header.php/admin-footer.php
+                   status-color helper + syncAbsences(), the no-cron
+                   absent-marker), admin-header.php/admin-footer.php
                    and staff-header.php/staff-footer.php (shared sidebar
-                   chrome every page requires — see CLAUDE.md "Design
-                   System" for the full convention)
+                   chrome every page requires — syncAbsences() runs from
+                   admin-header.php on every admin page — see CLAUDE.md
+                   "Design System" and "Attendance" for the full details)
   /sql             Numbered schema files (001_admins.sql, ...) + index.php
                    (the schema runner / DB dashboard / ad-hoc SQL tool /
                    Admin Account section — see CLAUDE.md for how it works),
                    plus .htaccess and a gitignored key.txt (admin
                    management key, created on first use)
-  /cron            mark-absent.php — daily absent-marker, see step 12 above
   config-example.php  Tracked config template — copy to config.php and edit
-  config.php       DB credentials + CRON_SECRET (gitignored — never committed)
+  config.php       DB credentials (gitignored — never committed)
   index.php        Redirects to /admin/login.php
   create-admin.php One-time first-admin creation script
   CLAUDE.md        Detailed technical/architecture notes for this project — the

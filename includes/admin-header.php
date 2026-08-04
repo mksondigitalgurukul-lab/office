@@ -92,3 +92,11 @@ $navItems = [
       <h1 class="page-title"><?= h($pageTitle) ?></h1>
     </header>
     <main class="app-content">
+<?php if (empty($bootstrapping)): ?>
+  <?php $absentSyncResult = syncAbsences(); ?>
+  <?php if ($absentSyncResult): ?>
+    <div class="alert alert-success no-print">
+      Attendance sync: marked <?= (int) $absentSyncResult['marked'] ?> absent, <?= (int) $absentSyncResult['on_leave'] ?> on leave, for <?= h($absentSyncResult['from']) ?> to <?= h($absentSyncResult['to']) ?> (no cron job needed — this runs automatically when an admin visits any page).
+    </div>
+  <?php endif; ?>
+<?php endif; ?>
