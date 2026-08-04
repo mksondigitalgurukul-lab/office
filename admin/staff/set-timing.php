@@ -75,7 +75,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <a href="../dashboard.php">Dashboard</a>
   <a href="index.php"><strong>Staff</strong></a>
   <a href="../attendance/index.php">Attendance</a>
-  <a href="../leave.php">Leave</a>
+  <a href="../leave/index.php">Leave</a>
+  <a href="../wfh/index.php">WFH</a>
+  <a href="../office-locations/index.php">Office Locations</a>
   <a href="../payout.php">Payout</a>
   <a href="../reports.php">Reports</a>
   <a href="../settings.php">Settings</a>

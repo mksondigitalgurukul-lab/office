@@ -9,11 +9,11 @@ company's own staff (not multi-company / multi-tenant). It runs on plain PHP
 (no framework) + MySQL over PDO, with session-based auth, deployed to cPanel
 shared hosting at `https://www.digitalalipro.in/office`.
 
-This is a **multi-prompt build**. This document reflects **Prompt 3 of 5**:
-the foundation (Prompt 1), staff management (Prompt 2), and now daily
-attendance check-in/check-out with office-WiFi verification, an admin
-attendance monitor, and a daily absent-marking cron script. Leave/WFH
-requests and payout are not built yet.
+This is a **multi-prompt build**. This document reflects **Prompt 4 of 5**:
+the foundation (Prompt 1), staff management (Prompt 2), attendance
+(Prompt 3), and now leave requests, WFH requests (staff- and
+admin-initiated), office-location CRUD, and approved WFH wired into
+attendance's `work_location` logic. Payout & reports are not built yet.
 
 ## Folder structure
 
@@ -33,11 +33,23 @@ requests and payout are not built yet.
       index.php       Today/date view — filter by department/work_mode, highlights late/unverified rows
       staff.php       Per-staff attendance history (last 60 records)
       edit.php        Manual add/edit of one staff's attendance row for one date (logs the edit in notes)
+    /leave              Leave request review (login-protected, admin session)
+      index.php       List/filter (status/staff/date range) all leave requests; one-click approve/reject
+    /wfh                WFH request review + direct assignment (login-protected, admin session)
+      index.php       List/filter WFH requests, approve/reject staff-initiated ones, and a
+                      form to directly assign+auto-approve a WFH day for any staff member
+    /office-locations   CRUD for office WiFi IPs (login-protected, admin session)
+      index.php       List + active/inactive toggle
+      add.php         Create a location
+      edit.php        Edit name/IP/active flag
   /staff              Staff-facing pages (staff session, separate from admin)
     login.php         Email + password login for staff accounts
     logout.php         Destroys staff session, redirects to login
-    dashboard.php      Welcome + work mode/timing + change-password form + nav stub
+    dashboard.php      Welcome + work mode/timing + change-password form + "Upcoming" list
+                       (holidays + this staff member's own approved leave/WFH) + nav stub
     attendance.php      Today's check-in/check-out status + buttons; holiday-skip
+    leave.php            Submit a leave request, see own history + a simple per-type balance
+    wfh.php              Submit a WFH request for one date, see own history
   /assets
     /css/style.css     Shared styles for all pages
     /js/main.js         Small shared UI behaviors (confirm dialogs)
@@ -45,8 +57,9 @@ requests and payout are not built yet.
     db.php              PDO connection (getDB())
     auth.php            Admin session helpers: requireLogin(), loginAdmin(), logoutAdmin(), currentAdmin()
     staff_auth.php       Staff session helpers: requireStaffLogin(), loginStaff(), logoutStaff(), currentStaff()
-    functions.php       h(), getSetting()/setSetting(), getCurrentWorkTiming(), and the attendance
-                        helpers described below (getClientIp(), isOfficeIp(), etc.)
+    functions.php       h(), getSetting()/setSetting(), getCurrentWorkTiming(), the attendance
+                        helpers (getClientIp(), isOfficeIp(), etc.), and hasApprovedWfh() /
+                        hasApprovedLeave() — see "Leave & WFH requests" below
   /sql
     001_admins.sql       Schema file — admins table
     002_settings.sql     Schema file — settings table + seed rows
@@ -55,12 +68,18 @@ requests and payout are not built yet.
     005_staff.sql         Schema file — staff table
     006_staff_work_time_history.sql   Schema file — staff_work_time_history table
     007_attendance.sql    Schema file — attendance table + seeds attendance_grace_minutes setting
+    008_leave_types.sql    Schema file — leave_types table + seeds Sick/Casual/Paid/Unpaid
+    009_leave_requests.sql Schema file — leave_requests table
+    010_wfh_requests.sql   Schema file — wfh_requests table
+    011_attendance_add_on_leave_status.sql   ALTER — adds 'on_leave' to attendance.status
+                                             (no CREATE TABLE, so it does NOT auto-run —
+                                             click "Re-run" for it once on /sql/index.php)
     index.php            Schema runner + DB dashboard + Admin Account section (see below)
     .htaccess             Blocks direct HTTP access to *.txt files (key.txt, schema_log.txt)
     key.txt               Admin management key — gitignored, created by the Admin Account section
   /cron
     mark-absent.php       Daily script: marks active staff with no attendance row for
-                          yesterday as 'absent' (skips holidays) — see "Attendance" below
+                          yesterday as 'absent' — now leave/WFH-aware, see "Attendance" below
   config-example.php     Tracked config template (DB credentials + CRON_SECRET placeholders)
   config.php            Copied from config-example.php on deploy — gitignored, never committed
   .gitignore
@@ -155,6 +174,9 @@ database by hand in phpMyAdmin.
 | `staff` | Employee records + their own login credentials. `work_mode` is `office`/`wfh`/`hybrid`. `status` is `active`/`inactive` (`inactive` = soft delete — the record is kept, and inactive staff cannot log in). `created_by` references the admin who created the record. |
 | `staff_work_time_history` | Append-only log of every work-timing change for a staff member — see "Work timing history convention" below. `set_by` references the admin who recorded the change. |
 | `attendance` | One row per staff member per day (unique on `staff_id` + `attendance_date`). `work_location` records how the check-in was verified; `status` is always computed by the app, never entered directly by staff — see "Attendance" below. |
+| `leave_types` | Kinds of leave (`is_paid` flag). Seeded with Sick, Casual, Paid (all paid) and Unpaid. |
+| `leave_requests` | Staff-submitted leave requests (always `requested_by` = the staff member themself — no admin-initiated leave). `days_count` is a simple inclusive calendar-day count, no accrual rules. `status` starts `pending`; an admin sets `approved`/`rejected` plus `reviewed_by`/`reviewed_at`. |
+| `wfh_requests` | One request per staff member per day (unique on `staff_id` + `wfh_date`). Either staff-submitted (`created_by_type = 'staff'`, starts `pending`) or admin-assigned (`created_by_type = 'admin'`, `status` is `approved` immediately, `reviewed_by` stays `NULL`). See "Leave & WFH requests" below. |
 
 ## Work timing history convention (important)
 
@@ -202,15 +224,15 @@ check-in/out, `admin/attendance/*` for the monitor). All logic lives in
   `office_locations.ip_address` rows (exact match, no CIDR support).
   - Match → `office_verified`.
   - No match, `staff.work_mode = 'wfh'` → `wfh` (no warning).
-  - No match, `staff.work_mode` is `'office'` or `'hybrid'` → `unverified`,
-    with an on-page warning that the check-in is flagged for admin review
-    — but it still saves; nothing blocks it.
+  - No match, `staff.work_mode` is `'office'` or `'hybrid'`, but
+    `hasApprovedWfh($staffId, $today)` is true → `wfh` (no warning) —
+    an approved WFH request for today overrides the usual unverified
+    flag for office/hybrid staff. Wired in `staff/attendance.php`.
+  - Otherwise (no match, no approved WFH for today) → `unverified`, with
+    an on-page warning that the check-in is flagged for admin review —
+    but it still saves; nothing blocks it.
   - `office_manual` is only ever set by an admin's manual override
     (`admin/attendance/edit.php`), never by the staff-side check-in flow.
-  - WFH-request-driven attendance (auto-treating a hybrid/office staff
-    member's approved WFH request day as legitimate `wfh` instead of
-    `unverified`) is **deferred to Prompt 4** — right now `work_location`
-    only reflects what was entered/detected at check-in time.
 - **`status` computation (never user-entered):**
   - At check-in: `computeCheckInStatus()` compares the check-in time
     against `getCurrentWorkTiming()`'s `start` plus
@@ -221,9 +243,10 @@ check-in/out, `admin/attendance/*` for the monitor). All logic lives in
     (`getCurrentWorkTiming()`'s `end - start`), status is overridden to
     `'half_day'` regardless of whether it was `'present'` or `'late'` at
     check-in. Otherwise the check-in status is left as-is.
-  - `'absent'` is only ever set by `cron/mark-absent.php` (no check-in
-    at all) or by an admin's manual override — never by the check-in/out
-    flow itself.
+  - `'absent'` and `'on_leave'` are only ever set by `cron/mark-absent.php`
+    or by an admin's manual override — never by the check-in/out flow
+    itself. `'on_leave'` requires the `011_attendance_add_on_leave_status.sql`
+    migration to have been (manually) run — see the `/sql` listing above.
 - **One row per staff per day** is enforced by the DB unique key on
   (`staff_id`, `attendance_date`), not just app logic.
 - **Manual overrides** (`admin/attendance/edit.php`) use
@@ -236,14 +259,68 @@ check-in/out, `admin/attendance/*` for the monitor). All logic lives in
   `[Manually edited by {admin name} on {timestamp}]` plus any optional
   reason to `notes` — prior notes are kept, never overwritten.
 - **`cron/mark-absent.php`** runs once daily (see README for cPanel
-  scheduling) and, for **yesterday's** date only, inserts an `'absent'`
-  row (`work_location = 'unverified'`) for every active staff member with
-  no attendance row for that date — skipped entirely if yesterday was a
-  holiday. Idempotent: safe to re-run, existing rows are left untouched.
-  Runs via CLI with no auth; if triggered over HTTP instead (e.g. a
-  cPanel "URL" cron job) it requires `?key=` to match `CRON_SECRET` in
-  `config.php` (placeholder in `config-example.php` — change it on the
-  real server's `config.php`).
+  scheduling) and, for **yesterday's** date only, considers every active
+  staff member with no attendance row for that date (skipped entirely if
+  yesterday was a company-wide holiday):
+  - Approved leave covering that date (`hasApprovedLeave()`) → inserts an
+    `'on_leave'` row instead of `'absent'` (a deliberate choice — see
+    "Leave & WFH requests" below for why leave and WFH are treated
+    differently here).
+  - Approved WFH for that date, no check-in (`hasApprovedWfh()`) → **no
+    row is inserted at all**, same treatment as a holiday.
+  - Otherwise → `'absent'` row (`work_location = 'unverified'`), as before.
+  Idempotent: safe to re-run, existing rows are left untouched. Runs via
+  CLI with no auth; if triggered over HTTP instead (e.g. a cPanel "URL"
+  cron job) it requires `?key=` to match `CRON_SECRET` in `config.php`
+  (placeholder in `config-example.php` — change it on the real server's
+  `config.php`).
+
+## Leave & WFH requests
+
+- **Leave** (`leave_requests`, `staff/leave.php`, `admin/leave/index.php`)
+  is always staff-initiated — `requested_by` is always the requesting
+  staff member's own id, there's no admin-initiated leave. `days_count` is
+  a simple inclusive calendar-day count (`to_date - from_date + 1`) — no
+  weekend/holiday exclusion or accrual rules. The staff-side "leave
+  balance" is just `SUM(days_count)` of that staff member's `approved`
+  requests this calendar year, grouped by `leave_type_id` — not a real
+  accrual ledger.
+- **WFH** (`wfh_requests`, `staff/wfh.php`, `admin/wfh/index.php`) has two
+  distinct origins, both writing the same table:
+  - **Staff-initiated:** `created_by_type = 'staff'`, `created_by_id` =
+    the staff member's own id, starts `status = 'pending'`, needs an
+    admin's approve/reject (which sets `reviewed_by`/`reviewed_at`).
+  - **Admin-initiated:** `created_by_type = 'admin'`, `created_by_id` =
+    the admin's id, `status = 'approved'` **immediately** — an admin
+    assigning WFH doesn't review/approve their own assignment, so
+    `reviewed_by`/`reviewed_at` stay `NULL` for these rows. Built as
+    "Assign a WFH Day" on `admin/wfh/index.php`.
+  - `created_by_id` has **no foreign key** — it's a polymorphic reference
+    (staff.id when `created_by_type = 'staff'`, admins.id when `'admin'`).
+  - Unique on (`staff_id`, `wfh_date`): at most one request per staff per
+    day. Both the staff submission form and the admin assignment form
+    write via `INSERT ... ON DUPLICATE KEY UPDATE` keyed on that
+    constraint — a staff member resubmitting after rejection, or an admin
+    re-assigning, updates the same row (and resets `reviewed_by`/
+    `reviewed_at` to `NULL`) rather than creating a duplicate. The
+    staff-side form additionally blocks resubmission with an error while
+    an existing request for that date is still `pending` or `approved`
+    (only a `rejected` one can be resubmitted).
+- **Why leave and WFH are treated differently in `cron/mark-absent.php`:**
+  approved leave means the staff member isn't expected to work that day at
+  all, so it gets its own `'on_leave'` attendance status — a clear signal
+  for future reports. Approved WFH means they *were* expected to work
+  (just remotely) — if they never checked in, that's a missed check-in
+  worth noticing, not a day off, so the cron doesn't fabricate a `'wfh'`
+  attendance row for them; it simply doesn't penalize them with `'absent'`
+  either. This was a judgment call within what the prompt allowed ("use
+  your judgment... document the choice clearly") — revisit if reporting
+  needs change.
+- `hasApprovedLeave(int $staffId, string $date): bool` and
+  `hasApprovedWfh(int $staffId, string $date): bool` in
+  `includes/functions.php` are the single source of truth for "was this
+  staff member on approved leave/WFH on this date" — reuse them (used by
+  both `staff/attendance.php`'s check-in and `cron/mark-absent.php`).
 
 ## Auth approach
 
@@ -292,7 +369,7 @@ check-in/out, `admin/attendance/*` for the monitor). All logic lives in
 - Passwords are hashed with `password_hash()` / verified with
   `password_verify()`. Never store or log plaintext passwords.
 
-## What's built so far (Prompts 1-3/5)
+## What's built so far (Prompts 1-4/5)
 
 **Prompt 1 — Foundation:**
 - Folder skeleton described above.
@@ -346,19 +423,57 @@ check-in/out, `admin/attendance/*` for the monitor). All logic lives in
   upsert-not-duplicate and notes accumulation), and the cron script's
   idempotency, holiday skip, and HTTP key gate (wrong key rejected).
 
-WFH-request-driven attendance (auto-treating an approved WFH request day
-as verified `wfh` for hybrid/office staff, instead of `unverified`) is
-**deferred to Prompt 4**, once WFH requests exist. Leave/WFH requests and
-payout are **not built yet** (Prompts 4-5).
+**Prompt 4 — Leave & WFH requests:**
+- `leave_types` (seeded Sick/Casual/Paid/Unpaid), `leave_requests`,
+  `wfh_requests` tables, plus a migration adding `'on_leave'` to
+  `attendance.status` (manual Re-run required — see the `/sql` listing).
+- Staff-side leave (`/staff/leave.php`): submit, own history, simple
+  per-type approved-days-this-year balance.
+- Staff-side WFH (`/staff/wfh.php`): submit (upsert-based, blocks
+  resubmission while pending/approved, allows it after rejection), own
+  history.
+- Staff dashboard (`/staff/dashboard.php`) gained an "Upcoming" list:
+  holidays + this staff member's own approved leave/WFH, soonest first.
+- Admin leave review (`/admin/leave/`): filter by status/staff/date range,
+  one-click approve/reject.
+- Admin WFH review + assignment (`/admin/wfh/`): filter/approve/reject
+  staff-initiated requests, plus "Assign a WFH Day" (auto-approved,
+  `created_by_type = 'admin'`) — see "Leave & WFH requests" above for the
+  full admin-vs-staff-initiated distinction.
+- Admin office-locations CRUD (`/admin/office-locations/`): add, edit,
+  active/inactive toggle — this was flagged as missing after Prompt 3 and
+  is now built.
+- Approved WFH wired into `staff/attendance.php`'s check-in logic (falls
+  back to `'wfh'` instead of `'unverified'` for office/hybrid staff with
+  an approved WFH request for today), and into `cron/mark-absent.php`
+  (approved leave → `'on_leave'`; approved WFH with no check-in → skipped,
+  not marked absent) — see "Attendance" above for the exact rules.
+- Admin nav gained **Leave**, **WFH**, and **Office Locations** links
+  across every admin page; staff nav split the old combined "Leave / WFH"
+  stub into separate **Leave** and **WFH** links.
+- Also: fixed the `config-exmaple.php` typo from Prompt 3 to
+  `config-example.php` (code, `.gitignore`, and both docs updated).
+- Verified end-to-end against a live MariaDB instance: schema auto-create
+  for the three new tables, the `on_leave` migration via manual Re-run,
+  office-locations add/edit/toggle, leave submit → approve → balance
+  update, WFH submit → duplicate-blocked → approve, WFH check-in wiring
+  (approved WFH staff correctly gets `'wfh'` not `'unverified'`),
+  admin-assigned WFH (auto-approved, `reviewed_by` stays `NULL`), WFH
+  reject → resubmit-after-rejection (upsert resets review fields), the
+  staff dashboard "Upcoming" list, and the cron script's three-way split
+  (absent / on_leave / skipped-for-WFH) with correct per-case attendance
+  rows (or no row, for the WFH-skip case).
+
+Payout & reports are **not built yet** (Prompt 5).
 
 ## What's planned (not yet built)
 
-- **Prompt 4:** Leave & WFH requests (will likely use/extend `holidays` +
-  the commented-out `holiday_staff` stub, and wire WFH-request-driven
-  attendance per the note above).
 - **Prompt 5:** Payout & reports.
 
-Do not build any of the above ahead of schedule.
+Do not build any of the above ahead of schedule. Note: `leave_requests`
+does not currently target specific staff via the still-unbuilt
+`holiday_staff` stub — that stub is about **holidays**, not leave, and
+remains untouched/unbuilt as documented in "Schema convention" above.
 
 ## Conventions
 

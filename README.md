@@ -5,11 +5,11 @@ payout) for one company, built as plain PHP + MySQL for cPanel shared
 hosting. Deployed at
 [www.digitalalipro.in/office](https://www.digitalalipro.in/office).
 
-> This is Prompt 3 of a multi-prompt build: project skeleton, database
-> schema runner, admin login, staff management + staff login with
-> work-time overrides, and now daily attendance check-in/check-out with
-> office-WiFi verification. Leave/WFH requests and payout are not built
-> yet — see `CLAUDE.md` for the full roadmap.
+> This is Prompt 4 of a multi-prompt build: project skeleton, database
+> schema runner, admin login, staff management, attendance check-in/out,
+> and now leave requests, WFH requests (staff- and admin-initiated), and
+> office-location management. Payout & reports are not built yet — see
+> `CLAUDE.md` for the full roadmap.
 
 ## Requirements
 
@@ -45,8 +45,14 @@ hosting. Deployed at
    in a browser. On a brand-new install (no admin account yet) this page is
    open in **setup mode** — it will automatically create the `admins`,
    `settings`, `office_locations`, `holidays`, `staff`,
-   `staff_work_time_history`, and `attendance` tables and show you their
-   structure.
+   `staff_work_time_history`, `attendance`, `leave_types` (seeded with
+   Sick/Casual/Paid/Unpaid), `leave_requests`, and `wfh_requests` tables
+   and show you their structure.
+   One file needs a **manual step**: `011_attendance_add_on_leave_status.sql`
+   is an `ALTER TABLE` (no `CREATE TABLE`), so it does not auto-run —
+   find it in the list and click its **Re-run** button once. Without this,
+   `cron/mark-absent.php` can't record the `'on_leave'` attendance status
+   (see step 11 below).
 5. **Create the first admin.** Two options — either works:
    - **Via DB Tools:** on `https://www.digitalalipro.in/office/sql/index.php`
      (still in setup mode), scroll to **Admin Account** and fill in the
@@ -82,21 +88,19 @@ hosting. Deployed at
    pick the admin, set a new password, and enter the management key from
    step 5. If you've lost that key, edit `sql/key.txt` directly on the
    server (via cPanel File Manager or SSH) to set a new one.
-10. **Register office WiFi IPs.** There's no admin page for
-    `office_locations` yet (not built in any prompt so far), so add rows
-    via **DB Tools** → **Ad-hoc SQL**, e.g.:
-    ```sql
-    INSERT INTO office_locations (location_name, ip_address, is_active)
-    VALUES ('Main Office', '203.0.113.10', 1);
-    ```
-    Use the public IP your office WiFi shows to the internet (check
-    `https://whatismyip.com` from an office machine) — this is what
-    `staff/attendance.php` compares check-ins against to set
-    `work_location = 'office_verified'`.
+10. **Register office WiFi IPs.** From the admin dashboard, go to
+    **Office Locations** → **+ Add Location**. Use the public IP your
+    office WiFi shows to the internet (check `https://whatismyip.com`
+    from an office machine) — this is what `staff/attendance.php`
+    compares check-ins against to set `work_location = 'office_verified'`.
+    Deactivate (don't delete) a location if it's no longer valid.
 11. **Schedule the daily absent-marker.** `cron/mark-absent.php` marks
     active staff with no attendance row for *yesterday* as `'absent'`
-    (skipping holidays) — see `CLAUDE.md` → "Attendance" for the exact
-    rules. In cPanel → **Cron Jobs**, add one that runs shortly after
+    (skipping holidays, and now aware of approved leave/WFH — see
+    `CLAUDE.md` → "Attendance" and "Leave & WFH requests" for the exact
+    rules). Requires step 4's `011_attendance_add_on_leave_status.sql`
+    Re-run to have been done, or `'on_leave'` rows will fail to insert.
+    In cPanel → **Cron Jobs**, add one that runs shortly after
     midnight (e.g. `5 0 * * *` for 12:05 AM daily). Two ways to run it:
     - **Preferred — run the PHP file directly:**
       ```bash
@@ -136,18 +140,21 @@ hosting. Deployed at
 ```
 /office
   /admin           Admin panel pages (login, logout, dashboard, staff
-                    management, attendance monitor — and, in later
-                    prompts, leave/payout/reports)
+                    management, attendance monitor, leave/WFH review,
+                    office-location CRUD — and, in a later prompt, payout/reports)
     /staff          Staff CRUD + work-timing override tool
     /attendance      Today/date monitor, per-staff history, manual override
-  /staff            Staff-facing pages: login, logout, dashboard, attendance
-                    (their own session, separate from /admin)
+    /leave           Leave request list/filter + approve/reject
+    /wfh             WFH request list/filter + approve/reject + direct assignment
+    /office-locations  Office WiFi IP CRUD (add/edit/active toggle)
+  /staff            Staff-facing pages: login, logout, dashboard, attendance,
+                    leave, wfh (their own session, separate from /admin)
   /assets/css      Shared stylesheet
   /assets/js       Shared JS (small UI behaviors)
   /includes        db.php (PDO connection), auth.php (admin session
                    helpers), staff_auth.php (staff session helpers),
                    functions.php (escaping + settings + work-timing +
-                   attendance helpers)
+                   attendance + leave/WFH helpers)
   /sql             Numbered schema files (001_admins.sql, ...) + index.php
                    (the schema runner / DB dashboard / ad-hoc SQL tool /
                    Admin Account section — see CLAUDE.md for how it works),
@@ -183,13 +190,22 @@ exists yet:
 | `timezone` | Informational | `Asia/Kolkata` |
 | `attendance_grace_minutes` | Minutes after `default_work_start_time` (or a staff member's override start time) before a check-in counts as `'late'` | `15` |
 
+## Leave types
+
+Seeded with Sick, Casual, Paid (all `is_paid = 1`), and Unpaid
+(`is_paid = 0`). No admin page manages `leave_types` — add, rename, or
+retire a type via DB Tools → Ad-hoc SQL, e.g.:
+```sql
+INSERT INTO leave_types (name, is_paid) VALUES ('Maternity', 1);
+```
+
 ## Roadmap
 
 - **Prompt 1:** Foundation — skeleton, schema runner, admin login. ✅
 - **Prompt 2:** Staff management, staff login, work-time overrides with
   history. ✅
-- **Prompt 3 (this build):** Daily attendance check-in/check-out with
-  office-WiFi verification, admin attendance monitor, absent-marking
-  cron. ✅
-- **Prompt 4:** Leave & WFH requests.
+- **Prompt 3:** Daily attendance check-in/check-out with office-WiFi
+  verification, admin attendance monitor, absent-marking cron. ✅
+- **Prompt 4 (this build):** Leave requests, WFH requests (staff- and
+  admin-initiated), office-location CRUD, WFH wired into attendance. ✅
 - **Prompt 5:** Payout & reports.

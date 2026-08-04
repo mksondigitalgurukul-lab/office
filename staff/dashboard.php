@@ -17,6 +17,39 @@ if (!$staff || $staff['status'] !== 'active') {
 }
 
 $timing = getCurrentWorkTiming($staff['id']);
+$today  = date('Y-m-d');
+
+// Simple combined "upcoming" list: holidays (company-wide) + this staff
+// member's own approved leave/WFH, soonest first.
+$upcoming = [];
+
+$stmt = $pdo->prepare('SELECT holiday_date, name FROM holidays WHERE holiday_date >= ? ORDER BY holiday_date ASC LIMIT 10');
+$stmt->execute([$today]);
+foreach ($stmt->fetchAll() as $h) {
+    $upcoming[] = ['date' => $h['holiday_date'], 'type' => 'Holiday', 'label' => $h['name']];
+}
+
+$stmt = $pdo->prepare(
+    "SELECT lr.from_date, lr.to_date, lt.name AS type_name
+     FROM leave_requests lr
+     JOIN leave_types lt ON lt.id = lr.leave_type_id
+     WHERE lr.staff_id = ? AND lr.status = 'approved' AND lr.to_date >= ?
+     ORDER BY lr.from_date ASC LIMIT 10"
+);
+$stmt->execute([$staff['id'], $today]);
+foreach ($stmt->fetchAll() as $l) {
+    $dateLabel = $l['from_date'] === $l['to_date'] ? $l['from_date'] : ($l['from_date'] . ' to ' . $l['to_date']);
+    $upcoming[] = ['date' => $l['from_date'], 'type' => 'Leave', 'label' => $l['type_name'] . ' leave (' . $dateLabel . ')'];
+}
+
+$stmt = $pdo->prepare("SELECT wfh_date FROM wfh_requests WHERE staff_id = ? AND status = 'approved' AND wfh_date >= ? ORDER BY wfh_date ASC LIMIT 10");
+$stmt->execute([$staff['id'], $today]);
+foreach ($stmt->fetchAll() as $w) {
+    $upcoming[] = ['date' => $w['wfh_date'], 'type' => 'WFH', 'label' => 'Approved WFH'];
+}
+
+usort($upcoming, fn($a, $b) => $a['date'] <=> $b['date']);
+$upcoming = array_slice($upcoming, 0, 10);
 
 $passwordError   = '';
 $passwordSuccess = '';
@@ -58,7 +91,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'chang
 
 <nav class="nav">
   <a href="attendance.php">Attendance</a>
-  <a href="leave.php">Leave / WFH</a>
+  <a href="leave.php">Leave</a>
+  <a href="wfh.php">WFH</a>
   <a href="payout.php">Payout</a>
   <a href="profile.php">Profile</a>
 </nav>
@@ -71,6 +105,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'chang
       <strong>Work Timing:</strong> <?= h($timing['start']) ?> – <?= h($timing['end']) ?>
       (<?= $timing['source'] === 'override' ? 'custom' : 'universal default' ?>)
     </p>
+  </div>
+
+  <h2>Upcoming</h2>
+  <div class="card" style="margin-bottom:16px;">
+    <?php if (!$upcoming): ?>
+      <p style="margin:0; color:var(--color-muted);">No upcoming holidays, approved leave, or approved WFH days.</p>
+    <?php else: ?>
+      <table class="db-table">
+        <thead><tr><th>Date</th><th>Type</th><th>Detail</th></tr></thead>
+        <tbody>
+          <?php foreach ($upcoming as $u): ?>
+            <tr>
+              <td><?= h($u['date']) ?></td>
+              <td><?= h($u['type']) ?></td>
+              <td><?= h($u['label']) ?></td>
+            </tr>
+          <?php endforeach; ?>
+        </tbody>
+      </table>
+    <?php endif; ?>
   </div>
 
   <div class="card" style="max-width:420px;">

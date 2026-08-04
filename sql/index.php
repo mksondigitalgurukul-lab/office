@@ -311,7 +311,9 @@ if (is_file($logFile)) {
   <a href="../admin/dashboard.php">Dashboard</a>
   <a href="../admin/staff/index.php">Staff</a>
   <a href="../admin/attendance/index.php">Attendance</a>
-  <a href="../admin/leave.php">Leave</a>
+  <a href="../admin/leave/index.php">Leave</a>
+  <a href="../admin/wfh/index.php">WFH</a>
+  <a href="../admin/office-locations/index.php">Office Locations</a>
   <a href="../admin/payout.php">Payout</a>
   <a href="../admin/reports.php">Reports</a>
   <a href="../admin/settings.php">Settings</a>

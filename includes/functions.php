@@ -124,3 +124,23 @@ function isHalfDay(string $scheduledStart, string $scheduledEnd, string $checkIn
     $workedSeconds = strtotime($checkOutTime) - strtotime($checkInTime);
     return $workedSeconds < ($scheduledSeconds / 2);
 }
+
+/** Whether a staff member has an approved WFH request for a specific date. */
+function hasApprovedWfh(int $staffId, string $date): bool
+{
+    $stmt = getDB()->prepare(
+        "SELECT COUNT(*) FROM wfh_requests WHERE staff_id = ? AND wfh_date = ? AND status = 'approved'"
+    );
+    $stmt->execute([$staffId, $date]);
+    return (int) $stmt->fetchColumn() > 0;
+}
+
+/** Whether a staff member has an approved leave request covering a specific date. */
+function hasApprovedLeave(int $staffId, string $date): bool
+{
+    $stmt = getDB()->prepare(
+        "SELECT COUNT(*) FROM leave_requests WHERE staff_id = ? AND status = 'approved' AND from_date <= ? AND to_date >= ?"
+    );
+    $stmt->execute([$staffId, $date, $date]);
+    return (int) $stmt->fetchColumn() > 0;
+}

@@ -41,6 +41,8 @@ if (!$holidayName && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 $location = 'office_verified';
             } elseif ($staff['work_mode'] === 'wfh') {
                 $location = 'wfh';
+            } elseif (hasApprovedWfh($staff['id'], $today)) {
+                $location = 'wfh';
             } else {
                 $location = 'unverified';
                 $warning  = "You don't appear to be on office WiFi — this check-in will be flagged for admin review.";
@@ -93,6 +95,7 @@ $statusLabels = [
     'late'     => 'Late',
     'half_day' => 'Half Day',
     'absent'   => 'Absent',
+    'on_leave' => 'On Leave',
 ];
 $locationLabels = [
     'office_verified' => 'Office (WiFi verified)',
@@ -121,7 +124,8 @@ $locationLabels = [
 <nav class="nav">
   <a href="dashboard.php">Dashboard</a>
   <a href="attendance.php"><strong>Attendance</strong></a>
-  <a href="leave.php">Leave / WFH</a>
+  <a href="leave.php">Leave</a>
+  <a href="wfh.php">WFH</a>
   <a href="payout.php">Payout</a>
   <a href="profile.php">Profile</a>
 </nav>
