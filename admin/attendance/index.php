@@ -54,38 +54,11 @@ $locationLabels = [
     'wfh'              => 'WFH',
     'unverified'       => 'Unverified',
 ];
+$pageTitle = 'Attendance';
+$activeNav = 'attendance';
+$basePath  = '../';
+require __DIR__ . '/../../includes/admin-header.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Attendance — <?= h(APP_NAME) ?></title>
-<link rel="stylesheet" href="../../assets/css/style.css">
-</head>
-<body>
-<div class="topbar">
-  <div class="brand"><?= h(APP_NAME) ?></div>
-  <div class="user-info">
-    <span><?= h($admin['name']) ?> (<?= h($admin['role']) ?>)</span>
-    <a href="../logout.php">Log out</a>
-  </div>
-</div>
-<nav class="nav">
-  <a href="../dashboard.php">Dashboard</a>
-  <a href="../staff/index.php">Staff</a>
-  <a href="index.php"><strong>Attendance</strong></a>
-  <a href="../leave/index.php">Leave</a>
-  <a href="../wfh/index.php">WFH</a>
-  <a href="../leave-types/index.php">Leave Types</a>
-  <a href="../office-locations/index.php">Office Locations</a>
-  <a href="../payout/index.php">Payout</a>
-  <a href="../reports/attendance.php">Reports</a>
-  <a href="../settings.php">Settings</a>
-  <a href="../../sql/index.php">DB Tools</a>
-</nav>
-
-<div class="container">
   <h1>Attendance</h1>
 
   <?php if ($holidayName): ?>
@@ -137,7 +110,7 @@ $locationLabels = [
       </thead>
       <tbody>
         <?php if (!$rows): ?>
-          <tr><td colspan="8" style="color:var(--color-muted);">No active staff match these filters.</td></tr>
+          <tr><td colspan="8" style="color:var(--color-text-muted);">No active staff match these filters.</td></tr>
         <?php endif; ?>
         <?php foreach ($rows as $r): ?>
           <?php $flag = $r['status'] === 'late' || $r['work_location'] === 'unverified'; ?>
@@ -149,16 +122,16 @@ $locationLabels = [
             <td><?= h($r['check_out_time'] ?? '—') ?></td>
             <td>
               <?php if ($r['work_location']): ?>
-                <span class="badge badge-<?= h($r['work_location']) ?>"><?= h($locationLabels[$r['work_location']] ?? $r['work_location']) ?></span>
+                <span class="badge badge-<?= badgeVariant($r['work_location']) ?>"><?= h($locationLabels[$r['work_location']] ?? $r['work_location']) ?></span>
               <?php else: ?>
                 —
               <?php endif; ?>
             </td>
             <td>
               <?php if ($r['status']): ?>
-                <span class="badge badge-<?= h($r['status']) ?>"><?= h($statusLabels[$r['status']] ?? $r['status']) ?></span>
+                <span class="badge badge-<?= badgeVariant($r['status']) ?>"><?= h($statusLabels[$r['status']] ?? $r['status']) ?></span>
               <?php else: ?>
-                <span style="color:var(--color-muted);">No record</span>
+                <span style="color:var(--color-text-muted);">No record</span>
               <?php endif; ?>
             </td>
             <td class="table-actions">
@@ -170,6 +143,4 @@ $locationLabels = [
       </tbody>
     </table>
   </div>
-</div>
-</body>
-</html>
+<?php require __DIR__ . '/../../includes/admin-footer.php'; ?>

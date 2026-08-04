@@ -5,11 +5,14 @@ payout) for one company, built as plain PHP + MySQL for cPanel shared
 hosting. Deployed at
 [www.digitalalipro.in/office](https://www.digitalalipro.in/office).
 
-> **V1 is complete.** All five build prompts have shipped: project
-> skeleton, admin/staff auth, staff management, attendance check-in/out
-> with office-WiFi verification, leave/WFH requests, and now salary
+> **V1 is complete, and Prompt 6 has layered a full UI/UX redesign on
+> top.** Project skeleton, admin/staff auth, staff management, attendance
+> check-in/out with office-WiFi verification, leave/WFH requests, salary
 > management, monthly payout generation, leave-types CRUD, and attendance
-> reports. See `CLAUDE.md` for full technical detail and V2 ideas.
+> reports (Prompts 1-5) — now wrapped in a colorful sidebar-based design
+> system with dark/light mode across every page (Prompt 6, frontend-only —
+> no business logic or schema changed). See `CLAUDE.md` for full
+> technical detail, the full design system writeup, and V2 ideas.
 
 ## Requirements
 
@@ -176,7 +179,8 @@ hosting. Deployed at
 /office
   /admin           Admin panel pages (login, logout, dashboard, staff
                     management, attendance monitor, leave/WFH review,
-                    leave-types CRUD, office-location CRUD, payout, reports)
+                    leave-types CRUD, office-location CRUD, payout, reports,
+                    settings)
     /staff          Staff CRUD + work-timing override tool + salary tool
     /attendance      Today/date monitor, per-staff history, manual override
     /leave           Leave request list/filter + approve/reject
@@ -185,14 +189,22 @@ hosting. Deployed at
     /office-locations  Office WiFi IP CRUD (add/edit/active toggle)
     /payout          Generate/list/view payouts — draft/finalize/paid, printable payslip
     /reports         attendance.php — flexible attendance summary + CSV export
+    settings.php     Edit every settings row via one dynamic form
   /staff            Staff-facing pages: login, logout, dashboard, attendance,
-                    leave, wfh (their own session, separate from /admin)
-  /assets/css      Shared stylesheet
-  /assets/js       Shared JS (small UI behaviors)
+                    leave, wfh, payout (read-only own history), profile
+                    (their own session, separate from /admin)
+  /assets/css      Design system stylesheet — CSS-variable light/dark
+                   theming, sidebar shell, cards/forms/badges/tables
+  /assets/js       Theme toggle + persistence, mobile sidebar drawer,
+                   confirm-dialog behavior
   /includes        db.php (PDO connection), auth.php (admin session
                    helpers), staff_auth.php (staff session helpers),
                    functions.php (escaping + settings + work-timing +
-                   attendance + leave/WFH + payout helpers)
+                   attendance + leave/WFH + payout helpers + badgeVariant()
+                   status-color helper), admin-header.php/admin-footer.php
+                   and staff-header.php/staff-footer.php (shared sidebar
+                   chrome every page requires — see CLAUDE.md "Design
+                   System" for the full convention)
   /sql             Numbered schema files (001_admins.sql, ...) + index.php
                    (the schema runner / DB dashboard / ad-hoc SQL tool /
                    Admin Account section — see CLAUDE.md for how it works),
@@ -218,9 +230,9 @@ safely. See `CLAUDE.md` for the full convention.
 
 ## Settings keys
 
-Editable today only via DB Tools → Ad-hoc SQL (`UPDATE settings SET
-setting_value = ... WHERE setting_key = ...`) — no settings admin page
-exists yet:
+Editable via **Settings** in the admin nav (`admin/settings.php`) — a
+dynamic form over every row in the `settings` table. (DB Tools → Ad-hoc
+SQL still works too, for anything not covered by that form.)
 
 | Key | Meaning | Default |
 |---|---|---|
@@ -246,10 +258,15 @@ uses to decide whether an approved leave request reduces a payout.
   verification, admin attendance monitor, absent-marking cron. ✅
 - **Prompt 4:** Leave requests, WFH requests (staff- and admin-initiated),
   office-location CRUD, WFH wired into attendance. ✅
-- **Prompt 5 (this build):** Salary management, monthly payout generation
+- **Prompt 5:** Salary management, monthly payout generation
   (draft → finalize → paid, printable payslip), leave-types CRUD,
   flexible attendance reports with CSV export. ✅
+- **Prompt 6 (this build):** Full UI/UX redesign — colorful sidebar-based
+  design system with dark/light mode across every admin and staff page,
+  `admin/settings.php` and `staff/profile.php` built to close out dead
+  nav links, frontend-only (no business logic or schema changes). ✅
 
-All five V1 prompts are done and verified end-to-end against real
-attendance/leave data. See `CLAUDE.md`'s "What's planned — V2 ideas"
-section for recommended next steps.
+All six prompts are done and verified end-to-end against real
+attendance/leave/payout data. See `CLAUDE.md`'s "Design System" section
+for the full color palette and layout conventions, and its "What's
+planned — V2 ideas" section for recommended next steps.

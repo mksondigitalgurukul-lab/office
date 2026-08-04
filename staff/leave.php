@@ -73,34 +73,10 @@ $stmt->execute([$staff['id'], $currentYear]);
 $balance = $stmt->fetchAll();
 
 $statusLabels = ['pending' => 'Pending', 'approved' => 'Approved', 'rejected' => 'Rejected'];
+$pageTitle = 'Leave';
+$activeNav = 'leave';
+require __DIR__ . '/../includes/staff-header.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Leave — <?= h(APP_NAME) ?></title>
-<link rel="stylesheet" href="../assets/css/style.css">
-</head>
-<body>
-<div class="topbar">
-  <div class="brand"><?= h(APP_NAME) ?></div>
-  <div class="user-info">
-    <span><?= h($staff['full_name']) ?></span>
-    <a href="logout.php">Log out</a>
-  </div>
-</div>
-
-<nav class="nav">
-  <a href="dashboard.php">Dashboard</a>
-  <a href="attendance.php">Attendance</a>
-  <a href="leave.php"><strong>Leave</strong></a>
-  <a href="wfh.php">WFH</a>
-  <a href="payout.php">Payout</a>
-  <a href="profile.php">Profile</a>
-</nav>
-
-<div class="container">
   <h1>Leave</h1>
 
   <?php if ($error): ?>
@@ -140,7 +116,7 @@ $statusLabels = ['pending' => 'Pending', 'approved' => 'Approved', 'rejected' =>
   </div>
 
   <h2>Leave Balance (<?= h($currentYear) ?>)</h2>
-  <p style="color:var(--color-muted);">Approved days this year, per leave type. Simple count — no accrual rules.</p>
+  <p style="color:var(--color-text-muted);">Approved days this year, per leave type. Simple count — no accrual rules.</p>
   <div class="overflow-x">
     <table class="db-table">
       <thead><tr><th>Leave Type</th><th>Approved Days</th></tr></thead>
@@ -160,7 +136,7 @@ $statusLabels = ['pending' => 'Pending', 'approved' => 'Approved', 'rejected' =>
       </thead>
       <tbody>
         <?php if (!$history): ?>
-          <tr><td colspan="6" style="color:var(--color-muted);">No leave requests yet.</td></tr>
+          <tr><td colspan="6" style="color:var(--color-text-muted);">No leave requests yet.</td></tr>
         <?php endif; ?>
         <?php foreach ($history as $r): ?>
           <tr>
@@ -169,12 +145,10 @@ $statusLabels = ['pending' => 'Pending', 'approved' => 'Approved', 'rejected' =>
             <td><?= h($r['to_date']) ?></td>
             <td><?= (int) $r['days_count'] ?></td>
             <td style="max-width:220px; white-space:pre-wrap;"><?= h($r['reason']) ?></td>
-            <td><span class="badge badge-<?= $r['status'] === 'approved' ? 'active' : ($r['status'] === 'rejected' ? 'unverified' : 'inactive') ?>"><?= h($statusLabels[$r['status']] ?? $r['status']) ?></span></td>
+            <td><span class="badge badge-<?= badgeVariant($r['status']) ?>"><?= h($statusLabels[$r['status']] ?? $r['status']) ?></span></td>
           </tr>
         <?php endforeach; ?>
       </tbody>
     </table>
   </div>
-</div>
-</body>
-</html>
+<?php require __DIR__ . '/../includes/staff-footer.php'; ?>

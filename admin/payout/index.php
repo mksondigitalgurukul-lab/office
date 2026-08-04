@@ -50,38 +50,11 @@ $statusLabels = ['draft' => 'Draft', 'finalized' => 'Finalized', 'paid' => 'Paid
 
 $flash = $_SESSION['flash'] ?? null;
 unset($_SESSION['flash']);
+$pageTitle = 'Payout';
+$activeNav = 'payout';
+$basePath  = '../';
+require __DIR__ . '/../../includes/admin-header.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Payout — <?= h(APP_NAME) ?></title>
-<link rel="stylesheet" href="../../assets/css/style.css">
-</head>
-<body>
-<div class="topbar">
-  <div class="brand"><?= h(APP_NAME) ?></div>
-  <div class="user-info">
-    <span><?= h($admin['name']) ?> (<?= h($admin['role']) ?>)</span>
-    <a href="../logout.php">Log out</a>
-  </div>
-</div>
-<nav class="nav">
-  <a href="../dashboard.php">Dashboard</a>
-  <a href="../staff/index.php">Staff</a>
-  <a href="../attendance/index.php">Attendance</a>
-  <a href="../leave/index.php">Leave</a>
-  <a href="../wfh/index.php">WFH</a>
-  <a href="../leave-types/index.php">Leave Types</a>
-  <a href="../office-locations/index.php">Office Locations</a>
-  <a href="index.php"><strong>Payout</strong></a>
-  <a href="../reports/attendance.php">Reports</a>
-  <a href="../settings.php">Settings</a>
-  <a href="../../sql/index.php">DB Tools</a>
-</nav>
-
-<div class="container">
   <div class="toolbar">
     <h1 style="margin:0;">Payout</h1>
     <a href="generate.php" class="btn">Generate Payout</a>
@@ -130,7 +103,7 @@ unset($_SESSION['flash']);
       </thead>
       <tbody>
         <?php if (!$payouts): ?>
-          <tr><td colspan="8" style="color:var(--color-muted);">No payouts match these filters.</td></tr>
+          <tr><td colspan="8" style="color:var(--color-text-muted);">No payouts match these filters.</td></tr>
         <?php endif; ?>
         <?php foreach ($payouts as $p): ?>
           <tr>
@@ -140,7 +113,7 @@ unset($_SESSION['flash']);
             <td><?= h(number_format((float) $p['unpaid_deduction'], 2)) ?></td>
             <td><?= h(number_format((float) $p['bonus'], 2)) ?></td>
             <td><strong><?= h(number_format((float) $p['net_payout'], 2)) ?></strong></td>
-            <td><span class="badge badge-<?= $p['status'] === 'paid' ? 'active' : ($p['status'] === 'finalized' ? 'office_manual' : 'inactive') ?>"><?= h($statusLabels[$p['status']] ?? $p['status']) ?></span></td>
+            <td><span class="badge badge-<?= badgeVariant($p['status']) ?>"><?= h($statusLabels[$p['status']] ?? $p['status']) ?></span></td>
             <td><a href="view.php?id=<?= (int) $p['id'] ?>">View</a></td>
           </tr>
         <?php endforeach; ?>
@@ -159,6 +132,4 @@ unset($_SESSION['flash']);
       <?php endif; ?>
     </table>
   </div>
-</div>
-</body>
-</html>
+<?php require __DIR__ . '/../../includes/admin-footer.php'; ?>

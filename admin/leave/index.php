@@ -60,38 +60,11 @@ $requests = $stmt->fetchAll();
 $staffList = $pdo->query("SELECT id, full_name FROM staff WHERE status = 'active' ORDER BY full_name")->fetchAll();
 
 $statusLabels = ['pending' => 'Pending', 'approved' => 'Approved', 'rejected' => 'Rejected'];
+$pageTitle = 'Leave Requests';
+$activeNav = 'leave';
+$basePath  = '../';
+require __DIR__ . '/../../includes/admin-header.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Leave Requests — <?= h(APP_NAME) ?></title>
-<link rel="stylesheet" href="../../assets/css/style.css">
-</head>
-<body>
-<div class="topbar">
-  <div class="brand"><?= h(APP_NAME) ?></div>
-  <div class="user-info">
-    <span><?= h($admin['name']) ?> (<?= h($admin['role']) ?>)</span>
-    <a href="../logout.php">Log out</a>
-  </div>
-</div>
-<nav class="nav">
-  <a href="../dashboard.php">Dashboard</a>
-  <a href="../staff/index.php">Staff</a>
-  <a href="../attendance/index.php">Attendance</a>
-  <a href="index.php"><strong>Leave</strong></a>
-  <a href="../wfh/index.php">WFH</a>
-  <a href="../leave-types/index.php">Leave Types</a>
-  <a href="../office-locations/index.php">Office Locations</a>
-  <a href="../payout/index.php">Payout</a>
-  <a href="../reports/attendance.php">Reports</a>
-  <a href="../settings.php">Settings</a>
-  <a href="../../sql/index.php">DB Tools</a>
-</nav>
-
-<div class="container">
   <h1>Leave Requests</h1>
 
   <?php if ($flash): ?>
@@ -141,7 +114,7 @@ $statusLabels = ['pending' => 'Pending', 'approved' => 'Approved', 'rejected' =>
       </thead>
       <tbody>
         <?php if (!$requests): ?>
-          <tr><td colspan="9" style="color:var(--color-muted);">No leave requests match these filters.</td></tr>
+          <tr><td colspan="9" style="color:var(--color-text-muted);">No leave requests match these filters.</td></tr>
         <?php endif; ?>
         <?php foreach ($requests as $r): ?>
           <tr class="<?= $r['status'] === 'pending' ? 'row-flag' : '' ?>">
@@ -151,7 +124,7 @@ $statusLabels = ['pending' => 'Pending', 'approved' => 'Approved', 'rejected' =>
             <td><?= h($r['to_date']) ?></td>
             <td><?= (int) $r['days_count'] ?></td>
             <td style="max-width:200px; white-space:pre-wrap;"><?= h($r['reason']) ?></td>
-            <td><span class="badge badge-<?= $r['status'] === 'approved' ? 'active' : ($r['status'] === 'rejected' ? 'unverified' : 'inactive') ?>"><?= h($statusLabels[$r['status']] ?? $r['status']) ?></span></td>
+            <td><span class="badge badge-<?= badgeVariant($r['status']) ?>"><?= h($statusLabels[$r['status']] ?? $r['status']) ?></span></td>
             <td><?= h($r['reviewed_at'] ?? '—') ?></td>
             <td class="table-actions">
               <?php if ($r['status'] === 'pending'): ?>
@@ -174,6 +147,4 @@ $statusLabels = ['pending' => 'Pending', 'approved' => 'Approved', 'rejected' =>
       </tbody>
     </table>
   </div>
-</div>
-</body>
-</html>
+<?php require __DIR__ . '/../../includes/admin-footer.php'; ?>

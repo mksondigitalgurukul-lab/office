@@ -41,38 +41,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 }
+$pageTitle = 'Edit Office Location';
+$activeNav = 'office-locations';
+$basePath  = '../';
+require __DIR__ . '/../../includes/admin-header.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Edit Office Location — <?= h(APP_NAME) ?></title>
-<link rel="stylesheet" href="../../assets/css/style.css">
-</head>
-<body>
-<div class="topbar">
-  <div class="brand"><?= h(APP_NAME) ?></div>
-  <div class="user-info">
-    <span><?= h($admin['name']) ?> (<?= h($admin['role']) ?>)</span>
-    <a href="../logout.php">Log out</a>
-  </div>
-</div>
-<nav class="nav">
-  <a href="../dashboard.php">Dashboard</a>
-  <a href="../staff/index.php">Staff</a>
-  <a href="../attendance/index.php">Attendance</a>
-  <a href="../leave/index.php">Leave</a>
-  <a href="../wfh/index.php">WFH</a>
-  <a href="../leave-types/index.php">Leave Types</a>
-  <a href="index.php"><strong>Office Locations</strong></a>
-  <a href="../payout/index.php">Payout</a>
-  <a href="../reports/attendance.php">Reports</a>
-  <a href="../settings.php">Settings</a>
-  <a href="../../sql/index.php">DB Tools</a>
-</nav>
-
-<div class="container">
   <h1>Edit Office Location</h1>
 
   <?php if ($error): ?>
@@ -97,6 +70,4 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <a href="index.php" class="btn btn-secondary">Cancel</a>
     </form>
   </div>
-</div>
-</body>
-</html>
+<?php require __DIR__ . '/../../includes/admin-footer.php'; ?>

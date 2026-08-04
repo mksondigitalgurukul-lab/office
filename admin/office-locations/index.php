@@ -19,44 +19,17 @@ $locations = $pdo->query('SELECT * FROM office_locations ORDER BY location_name'
 
 $flash = $_SESSION['flash'] ?? null;
 unset($_SESSION['flash']);
+$pageTitle = 'Office Locations';
+$activeNav = 'office-locations';
+$basePath  = '../';
+require __DIR__ . '/../../includes/admin-header.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Office Locations — <?= h(APP_NAME) ?></title>
-<link rel="stylesheet" href="../../assets/css/style.css">
-</head>
-<body>
-<div class="topbar">
-  <div class="brand"><?= h(APP_NAME) ?></div>
-  <div class="user-info">
-    <span><?= h($admin['name']) ?> (<?= h($admin['role']) ?>)</span>
-    <a href="../logout.php">Log out</a>
-  </div>
-</div>
-<nav class="nav">
-  <a href="../dashboard.php">Dashboard</a>
-  <a href="../staff/index.php">Staff</a>
-  <a href="../attendance/index.php">Attendance</a>
-  <a href="../leave/index.php">Leave</a>
-  <a href="../wfh/index.php">WFH</a>
-  <a href="../leave-types/index.php">Leave Types</a>
-  <a href="index.php"><strong>Office Locations</strong></a>
-  <a href="../payout/index.php">Payout</a>
-  <a href="../reports/attendance.php">Reports</a>
-  <a href="../settings.php">Settings</a>
-  <a href="../../sql/index.php">DB Tools</a>
-</nav>
-
-<div class="container">
   <div class="toolbar">
     <h1 style="margin:0;">Office Locations</h1>
     <a href="add.php" class="btn">+ Add Location</a>
   </div>
 
-  <p style="color:var(--color-muted);">Active locations' IP addresses are what staff check-ins are compared against to set <code>work_location = 'office_verified'</code>.</p>
+  <p style="color:var(--color-text-muted);">Active locations' IP addresses are what staff check-ins are compared against to set <code>work_location = 'office_verified'</code>.</p>
 
   <?php if ($flash): ?>
     <div class="alert alert-<?= $flash['type'] === 'success' ? 'success' : 'error' ?>"><?= h($flash['text']) ?></div>
@@ -69,13 +42,13 @@ unset($_SESSION['flash']);
       </thead>
       <tbody>
         <?php if (!$locations): ?>
-          <tr><td colspan="5" style="color:var(--color-muted);">No office locations yet.</td></tr>
+          <tr><td colspan="5" style="color:var(--color-text-muted);">No office locations yet.</td></tr>
         <?php endif; ?>
         <?php foreach ($locations as $loc): ?>
           <tr>
             <td><?= h($loc['location_name']) ?></td>
             <td><?= h($loc['ip_address']) ?></td>
-            <td><span class="badge badge-<?= $loc['is_active'] ? 'active' : 'inactive' ?>"><?= $loc['is_active'] ? 'Active' : 'Inactive' ?></span></td>
+            <td><span class="badge badge-<?= badgeVariant($loc['is_active'] ? 'active' : 'inactive') ?>"><?= $loc['is_active'] ? 'Active' : 'Inactive' ?></span></td>
             <td><?= h($loc['created_at']) ?></td>
             <td class="table-actions">
               <a href="edit.php?id=<?= (int) $loc['id'] ?>">Edit</a>
@@ -90,8 +63,4 @@ unset($_SESSION['flash']);
       </tbody>
     </table>
   </div>
-</div>
-
-<script src="../../assets/js/main.js"></script>
-</body>
-</html>
+<?php require __DIR__ . '/../../includes/admin-footer.php'; ?>

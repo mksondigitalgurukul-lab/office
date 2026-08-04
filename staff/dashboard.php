@@ -19,6 +19,23 @@ if (!$staff || $staff['status'] !== 'active') {
 $timing = getCurrentWorkTiming($staff['id']);
 $today  = date('Y-m-d');
 
+$holidayName = getHolidayName($today);
+$stmt = $pdo->prepare('SELECT * FROM attendance WHERE staff_id = ? AND attendance_date = ?');
+$stmt->execute([$staff['id'], $today]);
+$todayRow = $stmt->fetch();
+
+$statusLabels = ['present' => 'Present', 'late' => 'Late', 'half_day' => 'Half Day', 'absent' => 'Absent', 'on_leave' => 'On Leave'];
+if ($holidayName) {
+    $todayStatusLabel = 'Holiday';
+    $todayStatusVariant = 'info';
+} elseif (!$todayRow || $todayRow['check_in_time'] === null) {
+    $todayStatusLabel = 'Not Checked In';
+    $todayStatusVariant = 'neutral';
+} else {
+    $todayStatusLabel = $statusLabels[$todayRow['status']] ?? $todayRow['status'];
+    $todayStatusVariant = badgeVariant($todayRow['status']);
+}
+
 // Simple combined "upcoming" list: holidays (company-wide) + this staff
 // member's own approved leave/WFH, soonest first.
 $upcoming = [];
@@ -51,66 +68,50 @@ foreach ($stmt->fetchAll() as $w) {
 usort($upcoming, fn($a, $b) => $a['date'] <=> $b['date']);
 $upcoming = array_slice($upcoming, 0, 10);
 
-$passwordError   = '';
-$passwordSuccess = '';
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'change_password') {
-    $currentPassword = (string) ($_POST['current_password'] ?? '');
-    $newPassword     = (string) ($_POST['new_password'] ?? '');
-    $confirmPassword = (string) ($_POST['confirm_password'] ?? '');
-
-    if (!password_verify($currentPassword, $staff['password_hash'])) {
-        $passwordError = 'Current password is incorrect.';
-    } elseif (strlen($newPassword) < 8) {
-        $passwordError = 'New password must be at least 8 characters.';
-    } elseif ($newPassword !== $confirmPassword) {
-        $passwordError = 'New password and confirmation do not match.';
-    } else {
-        $stmt = $pdo->prepare('UPDATE staff SET password_hash = ? WHERE id = ?');
-        $stmt->execute([password_hash($newPassword, PASSWORD_DEFAULT), $staff['id']]);
-        $passwordSuccess = 'Password updated.';
-    }
-}
+$pageTitle = 'Dashboard';
+$activeNav = 'dashboard';
+require __DIR__ . '/../includes/staff-header.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Dashboard — <?= h(APP_NAME) ?></title>
-<link rel="stylesheet" href="../assets/css/style.css">
-</head>
-<body>
-<div class="topbar">
-  <div class="brand"><?= h(APP_NAME) ?></div>
-  <div class="user-info">
-    <span><?= h($staff['full_name']) ?></span>
-    <a href="logout.php">Log out</a>
-  </div>
-</div>
-
-<nav class="nav">
-  <a href="attendance.php">Attendance</a>
-  <a href="leave.php">Leave</a>
-  <a href="wfh.php">WFH</a>
-  <a href="payout.php">Payout</a>
-  <a href="profile.php">Profile</a>
-</nav>
-
-<div class="container">
   <div class="welcome-box">
     <h1>Welcome, <?= h($staff['full_name']) ?></h1>
-    <p><strong>Work Mode:</strong> <?= h($staff['work_mode']) ?></p>
-    <p>
-      <strong>Work Timing:</strong> <?= h($timing['start']) ?> – <?= h($timing['end']) ?>
-      (<?= $timing['source'] === 'override' ? 'custom' : 'universal default' ?>)
-    </p>
+    <p><?= h(date('l, j F Y', strtotime($today))) ?></p>
+  </div>
+
+  <div class="stat-grid">
+    <div class="stat-card">
+      <div class="stat-label">Today's Status</div>
+      <div><span class="badge badge-<?= h($todayStatusVariant) ?>" style="font-size:0.85rem;"><?= h($todayStatusLabel) ?></span></div>
+      <?php if ($todayRow && $todayRow['check_in_time']): ?>
+        <div class="stat-sub">Checked in at <?= h($todayRow['check_in_time']) ?></div>
+      <?php endif; ?>
+    </div>
+    <div class="stat-card accent-primary">
+      <div class="stat-label">Work Mode</div>
+      <div class="stat-value" style="font-size:1.2rem; text-transform:capitalize;"><?= h($staff['work_mode']) ?></div>
+    </div>
+    <div class="stat-card accent-accent">
+      <div class="stat-label">Work Timing</div>
+      <div class="stat-value" style="font-size:1.2rem;"><?= h($timing['start']) ?> – <?= h($timing['end']) ?></div>
+      <div class="stat-sub"><?= $timing['source'] === 'override' ? 'Custom hours' : 'Universal default' ?></div>
+    </div>
+    <div class="stat-card accent-info">
+      <div class="stat-label">Upcoming</div>
+      <div class="stat-value"><?= count($upcoming) ?></div>
+      <div class="stat-sub">Holidays, leave &amp; WFH ahead</div>
+    </div>
+  </div>
+
+  <div class="quick-links" style="margin-bottom:20px;">
+    <a href="attendance.php" class="quick-link">Check In / Out</a>
+    <a href="leave.php" class="quick-link">Request Leave</a>
+    <a href="wfh.php" class="quick-link">Request WFH</a>
+    <a href="profile.php" class="quick-link">Change Password</a>
   </div>
 
   <h2>Upcoming</h2>
-  <div class="card" style="margin-bottom:16px;">
+  <div class="card">
     <?php if (!$upcoming): ?>
-      <p style="margin:0; color:var(--color-muted);">No upcoming holidays, approved leave, or approved WFH days.</p>
+      <p style="margin:0; color:var(--color-text-muted);">No upcoming holidays, approved leave, or approved WFH days.</p>
     <?php else: ?>
       <table class="db-table">
         <thead><tr><th>Date</th><th>Type</th><th>Detail</th></tr></thead>
@@ -126,34 +127,4 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'chang
       </table>
     <?php endif; ?>
   </div>
-
-  <div class="card" style="max-width:420px;">
-    <h2>Change Password</h2>
-
-    <?php if ($passwordError): ?>
-      <div class="alert alert-error"><?= h($passwordError) ?></div>
-    <?php endif; ?>
-    <?php if ($passwordSuccess): ?>
-      <div class="alert alert-success"><?= h($passwordSuccess) ?></div>
-    <?php endif; ?>
-
-    <form method="post" novalidate>
-      <input type="hidden" name="action" value="change_password">
-      <div class="field">
-        <label for="current_password">Current Password</label>
-        <input type="password" id="current_password" name="current_password" required>
-      </div>
-      <div class="field">
-        <label for="new_password">New Password</label>
-        <input type="password" id="new_password" name="new_password" required minlength="8">
-      </div>
-      <div class="field">
-        <label for="confirm_password">Confirm New Password</label>
-        <input type="password" id="confirm_password" name="confirm_password" required minlength="8">
-      </div>
-      <button type="submit" class="btn">Update Password</button>
-    </form>
-  </div>
-</div>
-</body>
-</html>
+<?php require __DIR__ . '/../includes/staff-footer.php'; ?>

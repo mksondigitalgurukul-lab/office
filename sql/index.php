@@ -286,44 +286,13 @@ if (is_file($logFile)) {
     $lines = file($logFile);
     $recentLog = implode('', array_slice($lines, -60));
 }
+$pageTitle = 'DB Tools';
+$activeNav = 'db-tools';
+$basePath  = '../admin/';
+require __DIR__ . '/../includes/admin-header.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>DB Tools — <?= h(APP_NAME) ?></title>
-<link rel="stylesheet" href="../assets/css/style.css">
-</head>
-<body>
-<div class="topbar">
-  <div class="brand"><?= h(APP_NAME) ?></div>
-  <div class="user-info">
-    <?php if ($bootstrapping): ?>
-      <span>Setup mode</span>
-    <?php else: ?>
-      <span><?= h($admin['name']) ?> (<?= h($admin['role']) ?>)</span>
-      <a href="../admin/logout.php">Log out</a>
-    <?php endif; ?>
-  </div>
-</div>
-<nav class="nav">
-  <a href="../admin/dashboard.php">Dashboard</a>
-  <a href="../admin/staff/index.php">Staff</a>
-  <a href="../admin/attendance/index.php">Attendance</a>
-  <a href="../admin/leave/index.php">Leave</a>
-  <a href="../admin/wfh/index.php">WFH</a>
-  <a href="../admin/leave-types/index.php">Leave Types</a>
-  <a href="../admin/office-locations/index.php">Office Locations</a>
-  <a href="../admin/payout/index.php">Payout</a>
-  <a href="../admin/reports/attendance.php">Reports</a>
-  <a href="../admin/settings.php">Settings</a>
-  <a href="index.php"><strong>DB Tools</strong></a>
-</nav>
-
-<div class="container">
   <h1>DB Tools</h1>
-  <p style="color:var(--color-muted);">Schema changes belong here — add a new numbered <code>.sql</code> file to <code>/sql</code> for each future change, then reload this page.</p>
+  <p style="color:var(--color-text-muted);">Schema changes belong here — add a new numbered <code>.sql</code> file to <code>/sql</code> for each future change, then reload this page.</p>
 
   <?php if ($bootstrapping): ?>
     <div class="alert alert-error">Setup mode: no admin account exists yet, so this page is open without login. Use it to create the schema below, then run <code>create-admin.php</code> at the project root. Once an admin exists, this page locks behind admin login.</div>
@@ -340,11 +309,11 @@ if (is_file($logFile)) {
         <div>
           <strong><?= h($report['file']) ?></strong>
           <?php if ($report['status'] === 'created'): ?>
-            <span class="badge badge-created">created just now</span>
+            <span class="badge badge-<?= badgeVariant('created') ?>">created just now</span>
           <?php elseif ($report['status'] === 'exists'): ?>
-            <span class="badge badge-exists">table exists</span>
+            <span class="badge badge-<?= badgeVariant('exists') ?>">table exists</span>
           <?php elseif ($report['status'] === 'error'): ?>
-            <span class="badge badge-error">error</span>
+            <span class="badge badge-<?= badgeVariant('error') ?>">error</span>
           <?php endif; ?>
         </div>
         <form method="post" style="margin:0;">
@@ -381,7 +350,7 @@ if (is_file($logFile)) {
       <?php endif; ?>
 
       <details style="margin-top:10px;">
-        <summary style="cursor:pointer; color:var(--color-muted); font-size:0.85rem;">View file contents</summary>
+        <summary style="cursor:pointer; color:var(--color-text-muted); font-size:0.85rem;">View file contents</summary>
         <pre class="sql-source"><?= h($report['content']) ?></pre>
       </details>
     </div>
@@ -389,7 +358,7 @@ if (is_file($logFile)) {
 
   <h2>Admin Account</h2>
   <?php if ($adminCount === 0): ?>
-    <p style="color:var(--color-muted);">No admin account exists yet. Create the first one here. The key you choose below becomes the management key required for every future admin password reset — pick one you'll remember, it isn't shown again.</p>
+    <p style="color:var(--color-text-muted);">No admin account exists yet. Create the first one here. The key you choose below becomes the management key required for every future admin password reset — pick one you'll remember, it isn't shown again.</p>
     <div class="card" style="max-width:480px;">
       <form method="post" novalidate>
         <input type="hidden" name="action" value="create_admin">
@@ -414,7 +383,7 @@ if (is_file($logFile)) {
       </form>
     </div>
   <?php else: ?>
-    <p style="color:var(--color-muted);">An admin already exists, so this section only resets an existing admin's password — protected by the management key set when the first admin was created.</p>
+    <p style="color:var(--color-text-muted);">An admin already exists, so this section only resets an existing admin's password — protected by the management key set when the first admin was created.</p>
     <div class="card" style="max-width:480px;">
       <form method="post" novalidate>
         <input type="hidden" name="action" value="update_admin_password">
@@ -458,7 +427,7 @@ if (is_file($logFile)) {
   </div>
 
   <h2>Ad-hoc SQL</h2>
-  <p style="color:var(--color-muted);">For manual fixes only (e.g. an ALTER TABLE). Every statement run here is logged below.</p>
+  <p style="color:var(--color-text-muted);">For manual fixes only (e.g. an ALTER TABLE). Every statement run here is logged below.</p>
   <form method="post" data-confirm="Run this SQL against the live database?">
     <input type="hidden" name="action" value="alter">
     <div class="field">
@@ -471,10 +440,6 @@ if (is_file($logFile)) {
   <?php if ($recentLog): ?>
     <pre class="sql-source"><?= h($recentLog) ?></pre>
   <?php else: ?>
-    <p style="color:var(--color-muted);">No manual changes logged yet.</p>
+    <p style="color:var(--color-text-muted);">No manual changes logged yet.</p>
   <?php endif; ?>
-</div>
-
-<script src="../assets/js/main.js"></script>
-</body>
-</html>
+<?php require __DIR__ . '/../includes/admin-footer.php'; ?>

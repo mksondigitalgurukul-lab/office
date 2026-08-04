@@ -105,38 +105,11 @@ $statusLabels = ['present' => 'Present', 'late' => 'Late', 'half_day' => 'Half D
 $locationLabels = ['office_verified' => 'Office (verified)', 'office_manual' => 'Office (manual)', 'wfh' => 'WFH', 'unverified' => 'Unverified'];
 
 $qs = http_build_query(['staff_id' => $staffId, 'range' => $range, 'from' => $from, 'to' => $to]);
+$pageTitle = 'Attendance Report';
+$activeNav = 'reports';
+$basePath  = '../';
+require __DIR__ . '/../../includes/admin-header.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Attendance Report — <?= h(APP_NAME) ?></title>
-<link rel="stylesheet" href="../../assets/css/style.css">
-</head>
-<body>
-<div class="topbar">
-  <div class="brand"><?= h(APP_NAME) ?></div>
-  <div class="user-info">
-    <span><?= h($admin['name']) ?> (<?= h($admin['role']) ?>)</span>
-    <a href="../logout.php">Log out</a>
-  </div>
-</div>
-<nav class="nav">
-  <a href="../dashboard.php">Dashboard</a>
-  <a href="../staff/index.php">Staff</a>
-  <a href="../attendance/index.php">Attendance</a>
-  <a href="../leave/index.php">Leave</a>
-  <a href="../wfh/index.php">WFH</a>
-  <a href="../leave-types/index.php">Leave Types</a>
-  <a href="../office-locations/index.php">Office Locations</a>
-  <a href="../payout/index.php">Payout</a>
-  <a href="attendance.php"><strong>Reports</strong></a>
-  <a href="../settings.php">Settings</a>
-  <a href="../../sql/index.php">DB Tools</a>
-</nav>
-
-<div class="container">
   <div class="toolbar">
     <h1 style="margin:0;">Attendance Report</h1>
     <a href="attendance.php?<?= h($qs) ?>&amp;format=csv" class="btn btn-sm">Export CSV</a>
@@ -176,7 +149,7 @@ $qs = http_build_query(['staff_id' => $staffId, 'range' => $range, 'from' => $fr
     </div>
   </form>
 
-  <p style="color:var(--color-muted);">Showing <?= h($from) ?> to <?= h($to) ?>.</p>
+  <p style="color:var(--color-text-muted);">Showing <?= h($from) ?> to <?= h($to) ?>.</p>
 
   <div class="overflow-x">
     <table class="db-table">
@@ -188,7 +161,7 @@ $qs = http_build_query(['staff_id' => $staffId, 'range' => $range, 'from' => $fr
       </thead>
       <tbody>
         <?php if (!$summary): ?>
-          <tr><td colspan="9" style="color:var(--color-muted);">No data for these filters.</td></tr>
+          <tr><td colspan="9" style="color:var(--color-text-muted);">No data for these filters.</td></tr>
         <?php endif; ?>
         <?php foreach ($summary as $row): ?>
           <tr>
@@ -216,21 +189,19 @@ $qs = http_build_query(['staff_id' => $staffId, 'range' => $range, 'from' => $fr
         </thead>
         <tbody>
           <?php if (!$dailyLog): ?>
-            <tr><td colspan="5" style="color:var(--color-muted);">No attendance records in this range.</td></tr>
+            <tr><td colspan="5" style="color:var(--color-text-muted);">No attendance records in this range.</td></tr>
           <?php endif; ?>
           <?php foreach ($dailyLog as $row): ?>
             <tr class="<?= $row['status'] === 'late' || $row['work_location'] === 'unverified' ? 'row-flag' : '' ?>">
               <td><?= h($row['attendance_date']) ?></td>
               <td><?= h($row['check_in_time'] ?? '—') ?></td>
               <td><?= h($row['check_out_time'] ?? '—') ?></td>
-              <td><span class="badge badge-<?= h($row['work_location']) ?>"><?= h($locationLabels[$row['work_location']] ?? $row['work_location']) ?></span></td>
-              <td><span class="badge badge-<?= h($row['status']) ?>"><?= h($statusLabels[$row['status']] ?? $row['status']) ?></span></td>
+              <td><span class="badge badge-<?= badgeVariant($row['work_location']) ?>"><?= h($locationLabels[$row['work_location']] ?? $row['work_location']) ?></span></td>
+              <td><span class="badge badge-<?= badgeVariant($row['status']) ?>"><?= h($statusLabels[$row['status']] ?? $row['status']) ?></span></td>
             </tr>
           <?php endforeach; ?>
         </tbody>
       </table>
     </div>
   <?php endif; ?>
-</div>
-</body>
-</html>
+<?php require __DIR__ . '/../../includes/admin-footer.php'; ?>

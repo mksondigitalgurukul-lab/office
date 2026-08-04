@@ -93,40 +93,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $staffList = $pdo->query("SELECT id, full_name FROM staff WHERE status = 'active' ORDER BY full_name")->fetchAll();
+$pageTitle = 'Generate Payout';
+$activeNav = 'payout';
+$basePath  = '../';
+require __DIR__ . '/../../includes/admin-header.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Generate Payout — <?= h(APP_NAME) ?></title>
-<link rel="stylesheet" href="../../assets/css/style.css">
-</head>
-<body>
-<div class="topbar">
-  <div class="brand"><?= h(APP_NAME) ?></div>
-  <div class="user-info">
-    <span><?= h($admin['name']) ?> (<?= h($admin['role']) ?>)</span>
-    <a href="../logout.php">Log out</a>
-  </div>
-</div>
-<nav class="nav">
-  <a href="../dashboard.php">Dashboard</a>
-  <a href="../staff/index.php">Staff</a>
-  <a href="../attendance/index.php">Attendance</a>
-  <a href="../leave/index.php">Leave</a>
-  <a href="../wfh/index.php">WFH</a>
-  <a href="../leave-types/index.php">Leave Types</a>
-  <a href="../office-locations/index.php">Office Locations</a>
-  <a href="index.php"><strong>Payout</strong></a>
-  <a href="../reports/attendance.php">Reports</a>
-  <a href="../settings.php">Settings</a>
-  <a href="../../sql/index.php">DB Tools</a>
-</nav>
-
-<div class="container">
   <h1>Generate Payout</h1>
-  <p style="color:var(--color-muted);">Calculates base salary, attendance-based deduction, and net payout as a <strong>draft</strong> for review. Staff with no salary set are skipped; payouts already finalized or paid are never overwritten here — use "Regenerate" on that payout's page instead.</p>
+  <p style="color:var(--color-text-muted);">Calculates base salary, attendance-based deduction, and net payout as a <strong>draft</strong> for review. Staff with no salary set are skipped; payouts already finalized or paid are never overwritten here — use "Regenerate" on that payout's page instead.</p>
 
   <?php if ($error): ?>
     <div class="alert alert-error"><?= h($error) ?></div>
@@ -151,6 +124,4 @@ $staffList = $pdo->query("SELECT id, full_name FROM staff WHERE status = 'active
       <a href="index.php" class="btn btn-secondary">Cancel</a>
     </form>
   </div>
-</div>
-</body>
-</html>
+<?php require __DIR__ . '/../../includes/admin-footer.php'; ?>

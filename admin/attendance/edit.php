@@ -83,40 +83,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 }
+$pageTitle = 'Edit Attendance — ' . $staff['full_name'];
+$activeNav = 'attendance';
+$basePath  = '../';
+require __DIR__ . '/../../includes/admin-header.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Edit Attendance — <?= h($staff['full_name']) ?> — <?= h(APP_NAME) ?></title>
-<link rel="stylesheet" href="../../assets/css/style.css">
-</head>
-<body>
-<div class="topbar">
-  <div class="brand"><?= h(APP_NAME) ?></div>
-  <div class="user-info">
-    <span><?= h($admin['name']) ?> (<?= h($admin['role']) ?>)</span>
-    <a href="../logout.php">Log out</a>
-  </div>
-</div>
-<nav class="nav">
-  <a href="../dashboard.php">Dashboard</a>
-  <a href="../staff/index.php">Staff</a>
-  <a href="index.php"><strong>Attendance</strong></a>
-  <a href="../leave/index.php">Leave</a>
-  <a href="../wfh/index.php">WFH</a>
-  <a href="../leave-types/index.php">Leave Types</a>
-  <a href="../office-locations/index.php">Office Locations</a>
-  <a href="../payout/index.php">Payout</a>
-  <a href="../reports/attendance.php">Reports</a>
-  <a href="../settings.php">Settings</a>
-  <a href="../../sql/index.php">DB Tools</a>
-</nav>
-
-<div class="container">
   <h1>Manual Attendance Entry — <?= h($staff['full_name']) ?></h1>
-  <p style="color:var(--color-muted);"><?= $existing ? 'Editing an existing record.' : 'No record exists for this date yet — this will create one.' ?> Every save is logged in the notes below with your name and the time.</p>
+  <p style="color:var(--color-text-muted);"><?= $existing ? 'Editing an existing record.' : 'No record exists for this date yet — this will create one.' ?> Every save is logged in the notes below with your name and the time.</p>
 
   <?php if ($error): ?>
     <div class="alert alert-error"><?= h($error) ?></div>
@@ -179,6 +152,4 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <a href="staff.php?id=<?= (int) $staffId ?>" class="btn btn-secondary">Cancel</a>
     </form>
   </div>
-</div>
-</body>
-</html>
+<?php require __DIR__ . '/../../includes/admin-footer.php'; ?>

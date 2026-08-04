@@ -103,34 +103,10 @@ $locationLabels = [
     'wfh'              => 'Work From Home',
     'unverified'       => 'Unverified location',
 ];
+$pageTitle = 'Attendance';
+$activeNav = 'attendance';
+require __DIR__ . '/../includes/staff-header.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Attendance — <?= h(APP_NAME) ?></title>
-<link rel="stylesheet" href="../assets/css/style.css">
-</head>
-<body>
-<div class="topbar">
-  <div class="brand"><?= h(APP_NAME) ?></div>
-  <div class="user-info">
-    <span><?= h($staff['full_name']) ?></span>
-    <a href="logout.php">Log out</a>
-  </div>
-</div>
-
-<nav class="nav">
-  <a href="dashboard.php">Dashboard</a>
-  <a href="attendance.php"><strong>Attendance</strong></a>
-  <a href="leave.php">Leave</a>
-  <a href="wfh.php">WFH</a>
-  <a href="payout.php">Payout</a>
-  <a href="profile.php">Profile</a>
-</nav>
-
-<div class="container">
   <h1>Attendance — <?= h(date('l, j F Y', strtotime($today))) ?></h1>
 
   <?php if ($error): ?>
@@ -156,7 +132,7 @@ $locationLabels = [
       <p>
         Checked in at <strong><?= h($todayRow['check_in_time']) ?></strong>
         (<?= h($locationLabels[$todayRow['work_location']] ?? $todayRow['work_location']) ?>)
-        — <span class="badge badge-<?= h($todayRow['status']) ?>"><?= h($statusLabels[$todayRow['status']] ?? $todayRow['status']) ?></span>
+        — <span class="badge badge-<?= badgeVariant($todayRow['status']) ?>"><?= h($statusLabels[$todayRow['status']] ?? $todayRow['status']) ?></span>
       </p>
       <?php if ($todayRow['check_out_time'] === null): ?>
         <form method="post">
@@ -168,6 +144,4 @@ $locationLabels = [
       <?php endif; ?>
     <?php endif; ?>
   </div>
-</div>
-</body>
-</html>
+<?php require __DIR__ . '/../includes/staff-footer.php'; ?>

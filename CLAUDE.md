@@ -9,12 +9,14 @@ company's own staff (not multi-company / multi-tenant). It runs on plain PHP
 (no framework) + MySQL over PDO, with session-based auth, deployed to cPanel
 shared hosting at `https://www.digitalalipro.in/office`.
 
-This is a **multi-prompt build. V1 is now complete (Prompts 1-5/5).**
-Foundation (1), staff management (2), attendance (3), leave/WFH requests
-(4), and now salary management, monthly payout generation, leave-types
-CRUD, and attendance reports (5). **This file is the source of truth for
-any V2 planning** — see "What's built" and the V2 recommendations at the
-bottom for where to pick up next.
+This is a **multi-prompt build. V1 (Prompts 1-5/5) is functionally
+complete, and Prompt 6 layered a full UI/UX redesign on top of it — no
+business logic or schema changes.** Foundation (1), staff management (2),
+attendance (3), leave/WFH requests (4), salary management/payout/leave-types
+CRUD/attendance reports (5), and a colorful sidebar-based design system
+with dark/light mode across every page (6). **This file is the source of
+truth for any V2 planning** — see "What's built" and the V2 recommendations
+at the bottom for where to pick up next.
 
 ## Folder structure
 
@@ -56,26 +58,39 @@ bottom for where to pick up next.
     /reports            Reporting (login-protected, admin session)
       attendance.php  Flexible attendance summary (7 days/month/year/custom, all-staff or
                       one staff with a day-by-day log) + CSV export — see "Reports" below
+    settings.php        Edit every settings row via one dynamic form (Prompt 6)
   /staff              Staff-facing pages (staff session, separate from admin)
     login.php         Email + password login for staff accounts
     logout.php         Destroys staff session, redirects to login
-    dashboard.php      Welcome + work mode/timing + change-password form + "Upcoming" list
-                       (holidays + this staff member's own approved leave/WFH) + nav stub
+    dashboard.php      Welcome banner + "Today's Status"/"Work Mode"/"Work Timing"/"Upcoming"
+                       stat cards + quick links (check in/out, leave, WFH, profile) +
+                       "Upcoming" table (holidays + this staff member's own approved leave/WFH)
     attendance.php      Today's check-in/check-out status + buttons; holiday-skip
     leave.php            Submit a leave request, see own history + a simple per-type balance
     wfh.php              Submit a WFH request for one date, see own history
+    payout.php           Read-only list of this staff member's own payouts (Prompt 6)
+    profile.php           Read-only staff details (name/email/phone/designation/department/
+                          work mode/timing) + change-password form, moved here from the old
+                          dashboard.php (Prompt 6)
   /assets
-    /css/style.css     Shared styles for all pages
-    /js/main.js         Small shared UI behaviors (confirm dialogs)
+    /css/style.css     Design system — CSS variables, light/dark themes, sidebar shell,
+                       cards/forms/badges/tables — see "Design System" below
+    /js/main.js         Theme toggle + localStorage persistence, mobile sidebar drawer,
+                        [data-confirm] submit-confirmation dialogs
   /includes
     db.php              PDO connection (getDB())
     auth.php            Admin session helpers: requireLogin(), loginAdmin(), logoutAdmin(), currentAdmin()
     staff_auth.php       Staff session helpers: requireStaffLogin(), loginStaff(), logoutStaff(), currentStaff()
     functions.php       h(), getSetting()/setSetting(), getCurrentWorkTiming(), the attendance
                         helpers (getClientIp(), isOfficeIp(), etc.), hasApprovedWfh() /
-                        hasApprovedLeave() (see "Leave & WFH requests" below), and the payout
+                        hasApprovedLeave() (see "Leave & WFH requests" below), the payout
                         helpers getCurrentSalary() / computePayoutFigures() / daysInMonth() /
-                        getUnpaidLeaveDaysInMonth() / monthBounds() — see "Payout" below
+                        getUnpaidLeaveDaysInMonth() / monthBounds() (see "Payout" below), and
+                        badgeVariant() — maps any status string to one of 5 semantic badge
+                        colors (see "Design System" below)
+    admin-header.php / admin-footer.php   Shared sidebar-shell chrome for every /admin/*.php
+                                          and /sql/index.php page — see "Design System" below
+    staff-header.php / staff-footer.php   Same pattern for every /staff/*.php page
   /sql
     001_admins.sql       Schema file — admins table
     002_settings.sql     Schema file — settings table + seed rows
@@ -443,6 +458,186 @@ every request re-aggregates `attendance` directly with `SUM(condition)`
 (MySQL/MariaDB evaluate a boolean expression as 1/0), so this only stays
 fast at V1's expected data volumes — revisit if `attendance` grows large.
 
+## Design System (Prompt 6)
+
+Prompt 6 was a **pure frontend/presentational pass** — every page's
+business logic, validation, SQL, and the schema were left untouched.
+What changed is `assets/css/style.css` (full rewrite), `assets/js/main.js`
+(full rewrite), and the chrome every page is wrapped in (new shared
+include partials, described below). Two previously-missing pages were
+built to close out dead nav links: `admin/settings.php` and
+`staff/profile.php` (see "What's built" below).
+
+### Colors
+
+All colors are CSS custom properties on `:root`, overridden by
+`:root[data-theme="dark"]`. Nothing is hardcoded in a page — every page
+just uses `var(--color-*)`.
+
+- **Primary (brand):** `#4f46e5` (indigo) light mode / `#818cf8` dark mode
+  — used for the sidebar active-link background, primary buttons, links,
+  focus rings, and the dashboard "welcome" banner gradient.
+- **Accent:** `#f59e0b` (amber) light mode / `#fbbf24` dark mode — used
+  sparingly (`.btn-accent`, a few highlight numbers) so it reads as a
+  second brand color, not a rainbow.
+- **Semantic status colors** (each has a "-soft" background variant for
+  badge fills): `--color-success` (green), `--color-warning` (amber),
+  `--color-danger` (red), `--color-info` (blue), `--color-neutral` (gray).
+  These back the 5 `.badge-success/-warning/-danger/-info/-neutral`
+  classes — see "Status badges" below.
+- **Neutrals/surfaces:** `--color-bg`, `--color-surface` (cards/sidebar),
+  `--color-border`, `--color-text`, `--color-text-muted` all flip to
+  dark-appropriate values under `:root[data-theme="dark"]` — dark mode is
+  a deep indigo-tinted near-black (not pure gray), so the brand color
+  still reads as "colorful" rather than a generic inverted admin theme.
+  A backward-compatible alias `--color-muted: var(--color-text-muted);`
+  exists on `:root` (a few older inline `style="color:var(--color-muted)"`
+  usages remain scattered across pages — functionally identical, just an
+  older variable name; both resolve correctly in both themes).
+
+### Status badges — `badgeVariant()`
+
+`includes/functions.php`'s `badgeVariant(string $value): string` is the
+**single source of truth** mapping any status/value string used anywhere
+in the app to one of the 5 semantic badge classes above. Every badge in
+every table is rendered as:
+```php
+<span class="badge badge-<?= badgeVariant($row['status']) ?>"><?= h($label) ?></span>
+```
+Never write a literal `badge-<?= h($status) ?>` or a hand-rolled ternary
+— add the value to `badgeVariant()`'s internal `$map` instead, so the
+mapping stays centralized and every badge (attendance status, leave/WFH
+status, staff active/inactive, payout draft/finalized/paid, DB Tools
+schema-file status, etc.) stays visually consistent and legible in both
+themes. Current mapping: `present/approved/active/paid/created →
+success`; `late/half_day/pending/draft → warning`; `absent/rejected/
+unverified/error → danger`; `on_leave/office_manual/wfh/finalized/
+exists → info`; `inactive/unpaid/neutral fallback → neutral`.
+
+### Layout — sidebar shell
+
+Both panels use the same shell: a persistent left sidebar (desktop) that
+collapses to an off-canvas drawer (mobile), plus a minimal topbar showing
+only the current page title (no duplicate nav).
+
+- **Admin sidebar** groups nav links into four labeled sections:
+  **Overview** (Dashboard), **People** (Staff, Attendance, Leave, WFH),
+  **Money** (Payout, Reports), **Admin** (Leave Types, Office Locations,
+  Settings, DB Tools).
+- **Staff sidebar** is a flat list: Dashboard, Attendance, Leave, WFH,
+  Payout, Profile.
+- The active page's nav link gets the `.nav-link.active` class (solid
+  primary-color background) via a string comparison the page sets itself
+  (`$activeNav`, see "Shared header/footer includes" below).
+- **Desktop** (`> 900px`): sidebar is `position: fixed`, `width:
+  var(--sidebar-width)` (258px), always visible; `.app-main` has a
+  matching `margin-left`.
+- **Mobile** (`≤ 900px`): sidebar is `transform: translateX(-100%)` by
+  default (off-canvas), toggled open by a hamburger button in the topbar
+  (`#hamburgerBtn`) which adds a `.open` class; a `.sidebar-overlay` dims
+  the page behind it and closes the drawer on click; a close button
+  (`#sidebarClose`) sits in the sidebar's own header. All three are wired
+  in `assets/js/main.js`.
+- Sidebar footer (both panels) holds, top to bottom: the theme toggle
+  button, the logged-in user's avatar (initial) + name + role, and a
+  "Log out" link.
+
+### Dark/light mode
+
+- Every color used anywhere is a `var(--color-*)` custom property, so
+  switching themes is purely a matter of which `:root` block is active —
+  no page has its own light/dark logic.
+- The active theme is read from the `data-theme` attribute on `<html>`.
+  An **inline, render-blocking `<script>`** at the very top of `<head>`
+  (in both `admin-header.php` and `staff-header.php`) sets this attribute
+  *before* CSS paints, reading `localStorage.getItem('theme')` and
+  falling back to `prefers-color-scheme: dark` if nothing is stored yet —
+  this prevents a flash of the wrong theme on load.
+- The theme toggle button (`#themeToggle`, sun/moon SVG icons that
+  cross-fade via CSS) is wired in `assets/js/main.js`: on click, it flips
+  `data-theme` on `<html>` and writes the new value to
+  `localStorage['theme']`. Persistence is per-browser (`localStorage`),
+  shared across both the admin and staff panels since they're the same
+  origin — switching theme in one panel carries over to the other.
+- Login pages (`admin/login.php`, `staff/login.php`) have no sidebar (no
+  toggle to show), but still run the same inline blocking script so they
+  never flash light-mode white before a stored dark preference applies.
+- `@media print` (used by the payslip view, `admin/payout/view.php`)
+  unconditionally hides `.sidebar`, `.sidebar-overlay`, and `.topbar`
+  regardless of theme, so a print/PDF-export always renders as a clean
+  light document.
+
+### Shared header/footer includes
+
+Rather than duplicating sidebar markup across ~30 files (the source of
+several stale/inconsistent nav links before Prompt 6), every page
+`require`s a shared partial pair instead of writing its own
+`<!DOCTYPE html>`/`<nav>`/`</body>` boilerplate:
+
+- **`includes/admin-header.php`** / **`includes/admin-footer.php`** —
+  used by every `/admin/*.php` page and by `/sql/index.php`. The calling
+  page sets three variables *before* requiring the header:
+  - `$pageTitle` — shown in `<title>` and the topbar.
+  - `$activeNav` — one of the nav-item keys defined inside
+    `admin-header.php`'s `$navItems` array (`dashboard`, `staff`,
+    `attendance`, `leave`, `wfh`, `payout`, `reports`, `leave-types`,
+    `office-locations`, `settings`, `db-tools`) — highlights that link.
+  - `$basePath` — the relative path *back to* `/admin/` from the current
+    file: `''` for a page directly in `/admin/` (e.g. `dashboard.php`),
+    `'../'` for a page one level deeper (e.g. `staff/index.php`). The
+    header derives `$assetPath = $basePath . '../'` from this for
+    site-root-relative links (`assets/css/style.css`, `sql/index.php`).
+    `sql/index.php` is a special case — it sits outside `/admin/`
+    entirely, so it sets `$basePath = '../admin/'`, which still resolves
+    correctly through normal relative-URL navigation (`../admin/../` and
+    `../` land on the same directory; browsers don't need it
+    pre-simplified).
+  - `$admin` (the `currentAdmin()` array) must already be in scope, as on
+    every admin page.
+- **`includes/staff-header.php`** / **`includes/staff-footer.php`** —
+  same pattern for `/staff/*.php`, simpler since every staff page is at
+  the same depth (no `$basePath` needed): set `$pageTitle`, `$activeNav`
+  (`dashboard`, `attendance`, `leave`, `wfh`, `payout`, `profile`), and
+  have `$staff` in scope.
+- A page's actual link *targets* never changed in this pass — only how
+  the nav markup generating them is authored (one shared loop instead of
+  ~30 copies of a hand-written `<nav>`), which is what made a full "audit
+  every nav link" pass tractable.
+
+### Components
+
+- **Cards** (`.card`) — the base container for forms and content blocks
+  everywhere (settings, add/edit forms, payslip, DB Tools sections).
+- **Stat cards** (`.stat-grid` / `.stat-card`) — used on both dashboards:
+  admin shows today's attendance counts (active/present/absent/on-leave/
+  not-yet-recorded) and pending leave/WFH review counts; staff shows
+  today's status, work mode, work timing, and upcoming-items count.
+- **Quick links** (`.quick-links` / `.quick-link`) — pill-style shortcut
+  buttons under each dashboard's welcome banner.
+- **Tables** (`table.db-table`) — consistent rounded-corner, hover-row
+  styling used by every list page (staff, attendance, leave, WFH, payout,
+  DB Tools dashboard, reports).
+- **Forms** (`.field`, `.field-row`, `.filter-bar`) — consistent label/
+  input spacing and focus rings (`box-shadow` using the primary color's
+  soft variant) across every add/edit/filter form.
+- **Buttons** (`.btn`, `.btn-sm`, `.btn-secondary`, `.btn-accent`,
+  `.btn-danger`, `.btn-logout`) — one button system for the whole app.
+- **Alerts** (`.alert-success`, `.alert-error`) — flash messages after
+  form submits, and the bootstrap-mode "Setup mode" notice on
+  `/sql/index.php`.
+
+### Spacing, radius, typography
+
+- Radius scale: `--radius-sm` (inputs/badges), `--radius-md` (cards/
+  buttons), `--radius-lg` (larger containers).
+- Shadow scale: `--shadow-sm/md/lg` for cards and the mobile drawer.
+- `--sidebar-width: 258px`, `--topbar-height: 60px` drive the shell
+  layout math (`.app-main`'s `margin-left`, `.app-content`'s
+  `padding-top`, etc.) in one place.
+- No CSS framework, no build step — plain custom properties and
+  hand-written rules in `assets/css/style.css`, consistent with the
+  rest of the codebase's "no framework, no build tooling" convention.
+
 ## Auth approach
 
 - Session-based (PHP native sessions), no JWT/tokens. **Admin and staff
@@ -622,6 +817,48 @@ fast at V1's expected data volumes — revisit if `attendance` grows large.
   the reports module's quick-select ranges, all-staff vs. single-staff
   modes, and both CSV export shapes.
 
+**Prompt 6 — UI/UX redesign (frontend-only, no logic/schema changes):**
+- Full design system rewrite (`assets/css/style.css`, `assets/js/main.js`)
+  — CSS-variable-based light/dark theming, a colorful indigo/amber brand
+  identity, and a persistent-sidebar/off-canvas-drawer shell — see
+  "Design System" above for the complete color palette, component
+  inventory, and layout rules.
+- Shared `includes/admin-header.php`/`admin-footer.php` and
+  `includes/staff-header.php`/`staff-footer.php` partials replace every
+  page's hand-written `<nav>` boilerplate, closing out the several
+  stale/inconsistent nav links that had crept in across Prompts 1-5.
+- `includes/functions.php` gained `badgeVariant()`, the single source of
+  truth mapping any status string to one of 5 semantic badge colors —
+  replacing ad-hoc literal badge classes and ternaries scattered across
+  every list page.
+- **Two dead links fixed:** `admin/settings.php` (new — dynamic form over
+  every `settings` row) and `staff/profile.php` (new — read-only staff
+  details + the change-password form moved here from the old dashboard).
+  A third, discovered during the nav audit — `staff/payout.php`
+  (read-only list of the logged-in staff member's own payouts) — was also
+  built, since staff nav already listed "Payout" as a destination with no
+  page behind it.
+- All 21 chrome-bearing admin pages (every page under `/admin/` except
+  `login.php`/`logout.php`, plus `/sql/index.php`) and all 5 staff pages
+  migrated to the new shell; both dashboards rebuilt around stat-card
+  widgets instead of plain text; both login pages restyled with the same
+  branding (no sidebar, since there's nothing to navigate yet) and
+  cross-linked to each other.
+- Verified against a live MariaDB instance: full schema bootstrap
+  (auto-create + both manual-Re-run migrations) through the redesigned
+  `sql/index.php`, admin account creation, admin+staff login, staff
+  add/salary/timing, a check-in/check-out cycle (correctly computing
+  `late` then `half_day`), a leave request submit→approve cycle, a
+  payout generate→finalize→mark-paid cycle whose `unpaid_deduction`
+  math matched by hand, `cron/mark-absent.php`, the attendance report's
+  CSV export, and `admin/settings.php` persisting a changed value —
+  all unchanged in behavior from before the redesign. A scripted crawl of
+  every reachable link in both the admin and staff panels (post-login)
+  found zero dead links and zero PHP fatal errors/warnings. Playwright
+  screenshots confirmed the sidebar, drawer, stat cards, badges, and
+  payslip all render correctly and stay legible in both light and dark
+  mode, at both desktop and mobile widths.
+
 ## What's planned — V2 ideas
 
 V1 (Prompts 1-5) is functionally complete end-to-end: staff onboarding,
@@ -680,5 +917,13 @@ was skipped. Recommendations for a V2, roughly in order of likely value:
   concern (table) per file, ascending order = execution order.
 - Table/column names: `snake_case`. PHP variables/functions: `camelCase`.
   Constants: `UPPER_SNAKE_CASE`.
-- Mobile-friendly, minimal UI: shared `assets/css/style.css`, no CSS
+- Mobile-friendly, colorful UI: shared `assets/css/style.css`, no CSS
   framework/build step, no JS framework — `assets/js/main.js` is plain JS.
+  See "Design System" above for the full color palette, sidebar layout,
+  and dark/light mode approach.
+- Every page reaching the sidebar shell does so via
+  `includes/admin-header.php`/`admin-footer.php` or
+  `includes/staff-header.php`/`staff-footer.php` — never write a page's
+  own `<!DOCTYPE html>`/`<nav>`/`</body>` boilerplate. Every status/value
+  rendered as a badge goes through `badgeVariant()` — never a literal
+  `badge-<?= h($status) ?>` or a hand-rolled ternary.

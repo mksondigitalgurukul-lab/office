@@ -58,34 +58,10 @@ $stmt->execute([$staff['id']]);
 $history = $stmt->fetchAll();
 
 $statusLabels = ['pending' => 'Pending', 'approved' => 'Approved', 'rejected' => 'Rejected'];
+$pageTitle = 'WFH';
+$activeNav = 'wfh';
+require __DIR__ . '/../includes/staff-header.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>WFH — <?= h(APP_NAME) ?></title>
-<link rel="stylesheet" href="../assets/css/style.css">
-</head>
-<body>
-<div class="topbar">
-  <div class="brand"><?= h(APP_NAME) ?></div>
-  <div class="user-info">
-    <span><?= h($staff['full_name']) ?></span>
-    <a href="logout.php">Log out</a>
-  </div>
-</div>
-
-<nav class="nav">
-  <a href="dashboard.php">Dashboard</a>
-  <a href="attendance.php">Attendance</a>
-  <a href="leave.php">Leave</a>
-  <a href="wfh.php"><strong>WFH</strong></a>
-  <a href="payout.php">Payout</a>
-  <a href="profile.php">Profile</a>
-</nav>
-
-<div class="container">
   <h1>Work From Home</h1>
 
   <?php if ($error): ?>
@@ -125,12 +101,10 @@ $statusLabels = ['pending' => 'Pending', 'approved' => 'Approved', 'rejected' =>
           <tr>
             <td><?= h($r['wfh_date']) ?></td>
             <td style="max-width:260px; white-space:pre-wrap;"><?= h($r['reason']) ?></td>
-            <td><span class="badge badge-<?= $r['status'] === 'approved' ? 'active' : ($r['status'] === 'rejected' ? 'unverified' : 'inactive') ?>"><?= h($statusLabels[$r['status']] ?? $r['status']) ?></span></td>
+            <td><span class="badge badge-<?= badgeVariant($r['status']) ?>"><?= h($statusLabels[$r['status']] ?? $r['status']) ?></span></td>
           </tr>
         <?php endforeach; ?>
       </tbody>
     </table>
   </div>
-</div>
-</body>
-</html>
+<?php require __DIR__ . '/../includes/staff-footer.php'; ?>

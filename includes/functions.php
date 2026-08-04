@@ -272,3 +272,46 @@ function computePayoutFigures(int $staffId, string $month): ?array
         'unpaid_deduction'  => $unpaidDeduction,
     ];
 }
+
+/**
+ * Map any status/value string used across the app to one of five semantic
+ * badge variants (success/warning/danger/info/neutral), so every page
+ * colors the same concept the same way. Purely presentational — see
+ * assets/css/style.css for the badge-{variant} classes. Unrecognized
+ * values fall back to 'neutral' rather than erroring.
+ */
+function badgeVariant(string $value): string
+{
+    static $map = [
+        // attendance.status
+        'present'  => 'success',
+        'late'     => 'warning',
+        'half_day' => 'warning',
+        'absent'   => 'danger',
+        'on_leave' => 'info',
+        // attendance.work_location
+        'office_verified' => 'success',
+        'office_manual'   => 'info',
+        'wfh'              => 'info',
+        'unverified'       => 'danger',
+        // leave_requests.status / wfh_requests.status
+        'pending'  => 'warning',
+        'approved' => 'success',
+        'rejected' => 'danger',
+        // staff.status / office_locations.is_active / leave_types.is_active
+        'active'   => 'success',
+        'inactive' => 'neutral',
+        // payouts.status
+        'draft'     => 'neutral',
+        'finalized' => 'info',
+        'paid'      => 'success',
+        // leave_types.is_paid, rendered as 'paid'/'unpaid' by the caller
+        'unpaid' => 'neutral',
+        // sql/index.php schema-file status badges
+        'created' => 'success',
+        'exists'  => 'info',
+        'error'   => 'danger',
+    ];
+
+    return $map[$value] ?? 'neutral';
+}

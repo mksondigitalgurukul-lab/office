@@ -73,40 +73,13 @@ $leaveTypes = $pdo->query(
 
 $flash = $_SESSION['flash'] ?? null;
 unset($_SESSION['flash']);
+$pageTitle = 'Leave Types';
+$activeNav = 'leave-types';
+$basePath  = '../';
+require __DIR__ . '/../../includes/admin-header.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Leave Types — <?= h(APP_NAME) ?></title>
-<link rel="stylesheet" href="../../assets/css/style.css">
-</head>
-<body>
-<div class="topbar">
-  <div class="brand"><?= h(APP_NAME) ?></div>
-  <div class="user-info">
-    <span><?= h($admin['name']) ?> (<?= h($admin['role']) ?>)</span>
-    <a href="../logout.php">Log out</a>
-  </div>
-</div>
-<nav class="nav">
-  <a href="../dashboard.php">Dashboard</a>
-  <a href="../staff/index.php">Staff</a>
-  <a href="../attendance/index.php">Attendance</a>
-  <a href="../leave/index.php">Leave</a>
-  <a href="../wfh/index.php">WFH</a>
-  <a href="index.php"><strong>Leave Types</strong></a>
-  <a href="../office-locations/index.php">Office Locations</a>
-  <a href="../payout/index.php">Payout</a>
-  <a href="../reports/attendance.php">Reports</a>
-  <a href="../settings.php">Settings</a>
-  <a href="../../sql/index.php">DB Tools</a>
-</nav>
-
-<div class="container">
   <h1>Leave Types</h1>
-  <p style="color:var(--color-muted);">Deactivating a type hides it from the staff-side request form but keeps existing requests intact — types already referenced by a leave request are never hard-deleted.</p>
+  <p style="color:var(--color-text-muted);">Deactivating a type hides it from the staff-side request form but keeps existing requests intact — types already referenced by a leave request are never hard-deleted.</p>
 
   <?php if ($error): ?>
     <div class="alert alert-error"><?= h($error) ?></div>
@@ -141,7 +114,7 @@ unset($_SESSION['flash']);
                 <button type="submit" class="btn btn-sm btn-secondary"><?= $t['is_paid'] ? 'Paid' : 'Unpaid' ?></button>
               </form>
             </td>
-            <td><span class="badge badge-<?= $t['is_active'] ? 'active' : 'inactive' ?>"><?= $t['is_active'] ? 'Active' : 'Inactive' ?></span></td>
+            <td><span class="badge badge-<?= badgeVariant($t['is_active'] ? 'active' : 'inactive') ?>"><?= $t['is_active'] ? 'Active' : 'Inactive' ?></span></td>
             <td><?= (int) $t['request_count'] ?></td>
             <td class="table-actions">
               <form method="post" style="display:inline;" data-confirm="<?= $t['is_active'] ? 'Deactivate' : 'Activate' ?> this leave type?">
@@ -170,8 +143,4 @@ unset($_SESSION['flash']);
       <button type="submit" class="btn">Add</button>
     </form>
   </div>
-</div>
-
-<script src="../../assets/js/main.js"></script>
-</body>
-</html>
+<?php require __DIR__ . '/../../includes/admin-footer.php'; ?>

@@ -54,40 +54,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 }
+$pageTitle = 'Set Timing — ' . $staff['full_name'];
+$activeNav = 'staff';
+$basePath  = '../';
+require __DIR__ . '/../../includes/admin-header.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Set Timing — <?= h($staff['full_name']) ?> — <?= h(APP_NAME) ?></title>
-<link rel="stylesheet" href="../../assets/css/style.css">
-</head>
-<body>
-<div class="topbar">
-  <div class="brand"><?= h(APP_NAME) ?></div>
-  <div class="user-info">
-    <span><?= h($admin['name']) ?> (<?= h($admin['role']) ?>)</span>
-    <a href="../logout.php">Log out</a>
-  </div>
-</div>
-<nav class="nav">
-  <a href="../dashboard.php">Dashboard</a>
-  <a href="index.php"><strong>Staff</strong></a>
-  <a href="../attendance/index.php">Attendance</a>
-  <a href="../leave/index.php">Leave</a>
-  <a href="../wfh/index.php">WFH</a>
-  <a href="../leave-types/index.php">Leave Types</a>
-  <a href="../office-locations/index.php">Office Locations</a>
-  <a href="../payout/index.php">Payout</a>
-  <a href="../reports/attendance.php">Reports</a>
-  <a href="../settings.php">Settings</a>
-  <a href="../../sql/index.php">DB Tools</a>
-</nav>
-
-<div class="container">
   <h1>Set Work Timing — <?= h($staff['full_name']) ?></h1>
-  <p style="color:var(--color-muted);">This always adds a new history row and never edits a past one, so historical attendance stays checkable against the timing that applied on that date.</p>
+  <p style="color:var(--color-text-muted);">This always adds a new history row and never edits a past one, so historical attendance stays checkable against the timing that applied on that date.</p>
 
   <?php if ($error): ?>
     <div class="alert alert-error"><?= h($error) ?></div>
@@ -125,6 +98,4 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <a href="view.php?id=<?= (int) $id ?>" class="btn btn-secondary">Cancel</a>
     </form>
   </div>
-</div>
-</body>
-</html>
+<?php require __DIR__ . '/../../includes/admin-footer.php'; ?>

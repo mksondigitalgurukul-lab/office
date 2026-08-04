@@ -46,38 +46,11 @@ $departments = $pdo->query('SELECT DISTINCT department FROM staff WHERE departme
 
 $flash = $_SESSION['flash'] ?? null;
 unset($_SESSION['flash']);
+$pageTitle = 'Staff';
+$activeNav = 'staff';
+$basePath  = '../';
+require __DIR__ . '/../../includes/admin-header.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Staff — <?= h(APP_NAME) ?></title>
-<link rel="stylesheet" href="../../assets/css/style.css">
-</head>
-<body>
-<div class="topbar">
-  <div class="brand"><?= h(APP_NAME) ?></div>
-  <div class="user-info">
-    <span><?= h($admin['name']) ?> (<?= h($admin['role']) ?>)</span>
-    <a href="../logout.php">Log out</a>
-  </div>
-</div>
-<nav class="nav">
-  <a href="../dashboard.php">Dashboard</a>
-  <a href="index.php"><strong>Staff</strong></a>
-  <a href="../attendance/index.php">Attendance</a>
-  <a href="../leave/index.php">Leave</a>
-  <a href="../wfh/index.php">WFH</a>
-  <a href="../leave-types/index.php">Leave Types</a>
-  <a href="../office-locations/index.php">Office Locations</a>
-  <a href="../payout/index.php">Payout</a>
-  <a href="../reports/attendance.php">Reports</a>
-  <a href="../settings.php">Settings</a>
-  <a href="../../sql/index.php">DB Tools</a>
-</nav>
-
-<div class="container">
   <div class="toolbar">
     <h1 style="margin:0;">Staff</h1>
     <a href="add.php" class="btn">+ Add Staff</a>
@@ -140,7 +113,7 @@ unset($_SESSION['flash']);
       </thead>
       <tbody>
         <?php if (!$staffList): ?>
-          <tr><td colspan="8" style="color:var(--color-muted);">No staff found.</td></tr>
+          <tr><td colspan="8" style="color:var(--color-text-muted);">No staff found.</td></tr>
         <?php endif; ?>
         <?php foreach ($staffList as $s): ?>
           <tr>
@@ -149,7 +122,7 @@ unset($_SESSION['flash']);
             <td><?= h($s['designation']) ?></td>
             <td><?= h($s['department']) ?></td>
             <td><?= h($s['work_mode']) ?></td>
-            <td><span class="badge badge-<?= $s['status'] === 'active' ? 'active' : 'inactive' ?>"><?= h($s['status']) ?></span></td>
+            <td><span class="badge badge-<?= badgeVariant($s['status']) ?>"><?= h($s['status']) ?></span></td>
             <td><?= h($s['joined_date']) ?></td>
             <td class="table-actions">
               <a href="view.php?id=<?= (int) $s['id'] ?>">View</a>
@@ -160,6 +133,4 @@ unset($_SESSION['flash']);
       </tbody>
     </table>
   </div>
-</div>
-</body>
-</html>
+<?php require __DIR__ . '/../../includes/admin-footer.php'; ?>

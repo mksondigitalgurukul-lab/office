@@ -42,38 +42,11 @@ $salaryHistory = $stmt->fetchAll();
 
 $flash = $_SESSION['flash'] ?? null;
 unset($_SESSION['flash']);
+$pageTitle = $staff['full_name'];
+$activeNav = 'staff';
+$basePath  = '../';
+require __DIR__ . '/../../includes/admin-header.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title><?= h($staff['full_name']) ?> — <?= h(APP_NAME) ?></title>
-<link rel="stylesheet" href="../../assets/css/style.css">
-</head>
-<body>
-<div class="topbar">
-  <div class="brand"><?= h(APP_NAME) ?></div>
-  <div class="user-info">
-    <span><?= h($admin['name']) ?> (<?= h($admin['role']) ?>)</span>
-    <a href="../logout.php">Log out</a>
-  </div>
-</div>
-<nav class="nav">
-  <a href="../dashboard.php">Dashboard</a>
-  <a href="index.php"><strong>Staff</strong></a>
-  <a href="../attendance/index.php">Attendance</a>
-  <a href="../leave/index.php">Leave</a>
-  <a href="../wfh/index.php">WFH</a>
-  <a href="../leave-types/index.php">Leave Types</a>
-  <a href="../office-locations/index.php">Office Locations</a>
-  <a href="../payout/index.php">Payout</a>
-  <a href="../reports/attendance.php">Reports</a>
-  <a href="../settings.php">Settings</a>
-  <a href="../../sql/index.php">DB Tools</a>
-</nav>
-
-<div class="container">
   <div class="toolbar">
     <h1 style="margin:0;"><?= h($staff['full_name']) ?></h1>
     <div class="table-actions">
@@ -99,7 +72,7 @@ unset($_SESSION['flash']);
     </div>
     <div class="field-row" style="margin-top:10px;">
       <div><strong>Work Mode:</strong> <?= h($staff['work_mode']) ?></div>
-      <div><strong>Status:</strong> <span class="badge badge-<?= $staff['status'] === 'active' ? 'active' : 'inactive' ?>"><?= h($staff['status']) ?></span></div>
+      <div><strong>Status:</strong> <span class="badge badge-<?= badgeVariant($staff['status']) ?>"><?= h($staff['status']) ?></span></div>
     </div>
     <div class="field-row" style="margin-top:10px;">
       <div><strong>Joined:</strong> <?= h($staff['joined_date'] ?? '—') ?></div>
@@ -132,7 +105,7 @@ unset($_SESSION['flash']);
       </thead>
       <tbody>
         <?php if (!$history): ?>
-          <tr><td colspan="5" style="color:var(--color-muted);">No overrides recorded — always used the universal default.</td></tr>
+          <tr><td colspan="5" style="color:var(--color-text-muted);">No overrides recorded — always used the universal default.</td></tr>
         <?php endif; ?>
         <?php foreach ($history as $row): ?>
           <tr>
@@ -141,7 +114,7 @@ unset($_SESSION['flash']);
               <td><?= h($row['work_start_time']) ?></td>
               <td><?= h($row['work_end_time']) ?></td>
             <?php else: ?>
-              <td colspan="2" style="color:var(--color-muted);">(revert to universal default)</td>
+              <td colspan="2" style="color:var(--color-text-muted);">(revert to universal default)</td>
             <?php endif; ?>
             <td><?= h($row['set_by_name'] ?? '—') ?></td>
             <td><?= h($row['created_at']) ?></td>
@@ -162,7 +135,7 @@ unset($_SESSION['flash']);
         Current: <strong><?= h(number_format($salary['amount'], 2)) ?></strong> / month
         (effective from <?= h($salary['effective_from']) ?>)
       <?php else: ?>
-        <span style="color:var(--color-muted);">No salary set yet — set one before generating a payout for this staff member.</span>
+        <span style="color:var(--color-text-muted);">No salary set yet — set one before generating a payout for this staff member.</span>
       <?php endif; ?>
     </p>
   </div>
@@ -175,7 +148,7 @@ unset($_SESSION['flash']);
       </thead>
       <tbody>
         <?php if (!$salaryHistory): ?>
-          <tr><td colspan="4" style="color:var(--color-muted);">No salary recorded yet.</td></tr>
+          <tr><td colspan="4" style="color:var(--color-text-muted);">No salary recorded yet.</td></tr>
         <?php endif; ?>
         <?php foreach ($salaryHistory as $row): ?>
           <tr>
@@ -188,6 +161,4 @@ unset($_SESSION['flash']);
       </tbody>
     </table>
   </div>
-</div>
-</body>
-</html>
+<?php require __DIR__ . '/../../includes/admin-footer.php'; ?>
