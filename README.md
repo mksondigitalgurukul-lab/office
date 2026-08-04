@@ -5,9 +5,10 @@ payout) for one company, built as plain PHP + MySQL for cPanel shared
 hosting. Deployed at
 [www.digitalalipro.in/office](https://www.digitalalipro.in/office).
 
-> This is Prompt 1 of a multi-prompt build: project skeleton, database
-> schema runner, and admin login only. Staff management, attendance, leave,
-> and payout are not built yet — see `CLAUDE.md` for the full roadmap.
+> This is Prompt 2 of a multi-prompt build: project skeleton, database
+> schema runner, admin login, and now staff management + staff login with
+> work-time overrides. Attendance, leave, and payout are not built yet —
+> see `CLAUDE.md` for the full roadmap.
 
 ## Requirements
 
@@ -35,8 +36,8 @@ hosting. Deployed at
 4. **Create the schema.** Visit `https://www.digitalalipro.in/office/sql/index.php`
    in a browser. On a brand-new install (no admin account yet) this page is
    open in **setup mode** — it will automatically create the `admins`,
-   `settings`, `office_locations`, and `holidays` tables and show you their
-   structure.
+   `settings`, `office_locations`, `holidays`, `staff`, and
+   `staff_work_time_history` tables and show you their structure.
 5. **Create the first admin.** Visit
    `https://www.digitalalipro.in/office/create-admin.php` and fill in a
    name, email, and password (8+ characters). This can only be run once —
@@ -54,6 +55,15 @@ hosting. Deployed at
    dashboard. From there, **DB Tools** in the nav (`/sql/index.php`) is now
    locked behind login, as normal — use it going forward for any future
    schema changes shipped in later prompts.
+8. **Add staff accounts.** From the admin dashboard, go to **Staff** →
+   **+ Add Staff**. Fill in the employee's details and either set an
+   initial password or leave it blank to auto-generate one — a
+   generated password is shown once right after creation, so save it
+   immediately (there's no way to retrieve it again; use the staff
+   member's own password-change form on their dashboard if it's lost).
+   Staff then log in separately at
+   `https://www.digitalalipro.in/office/staff/login.php` with that email
+   and password.
 
 ## Local development
 
@@ -65,17 +75,25 @@ hosting. Deployed at
    ```
 3. Visit `http://localhost:8000/sql/index.php` to create the schema, then
    `http://localhost:8000/create-admin.php` to create your first admin.
+4. Log in at `http://localhost:8000/admin/login.php`, add a staff member
+   under **Staff**, then log in as them at
+   `http://localhost:8000/staff/login.php`.
 
 ## Folder overview
 
 ```
 /office
-  /admin          Admin panel pages (login, logout, dashboard, and — in
-                   later prompts — staff/attendance/leave/payout/reports)
+  /admin           Admin panel pages (login, logout, dashboard, staff
+                    management — and, in later prompts, attendance/leave/
+                    payout/reports)
+    /staff          Staff CRUD + work-timing override tool
+  /staff            Staff-facing pages: login, logout, dashboard
+                    (their own session, separate from /admin)
   /assets/css      Shared stylesheet
   /assets/js       Shared JS (small UI behaviors)
-  /includes        db.php (PDO connection), auth.php (session helpers),
-                   functions.php (escaping + settings helpers)
+  /includes        db.php (PDO connection), auth.php (admin session
+                   helpers), staff_auth.php (staff session helpers),
+                   functions.php (escaping + settings + work-timing helpers)
   /sql             Numbered schema files (001_admins.sql, ...) + index.php
                    (the schema runner / DB dashboard / ad-hoc SQL tool —
                    see CLAUDE.md for how it works)
@@ -89,16 +107,16 @@ hosting. Deployed at
 ## Schema changes going forward
 
 **Do not edit the database by hand in phpMyAdmin.** Add a new numbered
-`.sql` file to `/sql` (e.g. `005_staff.sql`), then visit `/sql/index.php`
-while logged in — it detects and runs new files automatically, and lets you
-re-run or apply ad-hoc `ALTER` statements safely. See `CLAUDE.md` for the
-full convention.
+`.sql` file to `/sql` (e.g. `007_description.sql`), then visit
+`/sql/index.php` while logged in — it detects and runs new files
+automatically, and lets you re-run or apply ad-hoc `ALTER` statements
+safely. See `CLAUDE.md` for the full convention.
 
 ## Roadmap
 
-- **Prompt 1 (this build):** Foundation — skeleton, schema runner, admin
-  login. ✅
-- **Prompt 2:** Staff management.
+- **Prompt 1:** Foundation — skeleton, schema runner, admin login. ✅
+- **Prompt 2 (this build):** Staff management, staff login, work-time
+  overrides with history. ✅
 - **Prompt 3:** Attendance / WiFi-based check-in.
 - **Prompt 4:** Leave & WFH requests.
 - **Prompt 5:** Payout & reports.

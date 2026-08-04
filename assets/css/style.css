@@ -117,6 +117,9 @@ a:hover { text-decoration: underline; }
 .field input[type="text"],
 .field input[type="email"],
 .field input[type="password"],
+.field input[type="tel"],
+.field input[type="date"],
+.field input[type="time"],
 .field select,
 .field textarea {
   width: 100%;
@@ -126,6 +129,21 @@ a:hover { text-decoration: underline; }
   font-size: 1rem;
   font-family: inherit;
 }
+
+.field-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}
+
+.field-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.field-row .field { flex: 1; min-width: 160px; }
 
 .field textarea {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
@@ -235,6 +253,36 @@ pre.sql-source {
 .overflow-x {
   overflow-x: auto;
 }
+
+/* Staff list / toolbars */
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-bottom: 16px;
+}
+
+.filter-bar .field { margin-bottom: 0; min-width: 150px; }
+.filter-bar .field label { font-weight: 500; font-size: 0.8rem; color: var(--color-muted); }
+
+.badge-active { background: #dcfce7; color: var(--color-success); }
+.badge-inactive { background: #f3f4f6; color: var(--color-muted); }
+
+.table-actions { display: flex; gap: 10px; white-space: nowrap; }
 
 @media (max-width: 600px) {
   .topbar { flex-direction: column; align-items: flex-start; }

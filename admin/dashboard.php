@@ -23,7 +23,7 @@ $admin = currentAdmin();
 </div>
 
 <nav class="nav">
-  <a href="staff.php">Staff</a>
+  <a href="staff/index.php">Staff</a>
   <a href="attendance.php">Attendance</a>
   <a href="leave.php">Leave</a>
   <a href="payout.php">Payout</a>
@@ -35,7 +35,7 @@ $admin = currentAdmin();
 <div class="container">
   <div class="welcome-box">
     <h1>Welcome, <?= h($admin['name']) ?></h1>
-    <p>This is the <?= h(APP_NAME) ?> admin dashboard. Staff, attendance, leave, payout and reports modules will be added in upcoming builds — use <a href="../sql/index.php">DB Tools</a> to inspect the current database schema.</p>
+    <p>This is the <?= h(APP_NAME) ?> admin dashboard. Attendance, leave, payout and reports modules will be added in upcoming builds — use <a href="staff/index.php">Staff</a> to manage employees or <a href="../sql/index.php">DB Tools</a> to inspect the current database schema.</p>
   </div>
 </div>
 </body>
